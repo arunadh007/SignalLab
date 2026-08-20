@@ -35,56 +35,112 @@ SignalLab currently uses only Python standard-library modules, so no external Py
 
 ## 🚀 Installation
 
-### Clone the repository
+### Clone the Repository
 
 ```bash
 git clone https://github.com/arunadh007/SignalLab.git
 cd SignalLab
+```
 
-Run SignalLab python signal_lab.py
+### Run SignalLab
 
-On Linux or some Termux installations: python3 signal_lab.py
+```bash
+python signal_lab.py
+```
 
-📱 Termux Installation
+On Linux or some Termux installations:
 
-Install Git and Python: pkg update
+```bash
+python3 signal_lab.py
+```
+
+---
+
+## 📱 Termux Installation
+
+### 1. Install Git and Python
+
+```bash
+pkg update
 pkg install git python
+```
 
-Clone SignalLab: git clone https://github.com/arunadh007/SignalLab.git
-cd SignalLab
+### 2. Clone SignalLab
 
-Start SignalLab: python signal_lab.py
-
-🐧 Linux
-
-Install Git and Python if they are not already installed: sudo apt update
-sudo apt install git python3 
-
-Clone the repository: git clone https://github.com/arunadh007/SignalLab.git
-cd SignalLab 
-
-Run: python3 signal_lab.py
-
-🪟 Windows
-
-Install Python and Git, then open Command Prompt or PowerShell:
-
+```bash
 git clone https://github.com/arunadh007/SignalLab.git
 cd SignalLab
+```
+
+### 3. Start SignalLab
+
+```bash
 python signal_lab.py
+```
 
-| Option | Tool                   | Description                                   |
-| ------ | ---------------------- | --------------------------------------------- |
-| 1      | Phone Number Validator | Checks basic phone number formatting          |
-| 2      | DNS / Host Lookup      | Resolves a hostname to an IPv4 address        |
-| 3      | Network Information    | Displays local system and network information |
-| 4      | HTTP / API Tester      | Tests an HTTP/HTTPS endpoint                  |
-| 5      | Connectivity Test      | Checks TCP connectivity on port 443           |
-| 6      | View Logs              | Displays SignalLab activity logs              |
-| 7      | About SignalLab        | Shows project information                     |
-| 0      | Exit                   | Closes SignalLab                              |
+---
 
+## 🐧 Linux
 
+### 1. Install Git and Python
+
+```bash
+sudo apt update
+sudo apt install git python3
+```
+
+### 2. Clone the Repository
+
+```bash
+git clone https://github.com/arunadh007/SignalLab.git
+cd SignalLab
+```
+
+### 3. Run SignalLab
+
+```bash
+python3 signal_lab.py
+```
+
+---
+
+## 🪟 Windows
+
+Install Python and Git, then open **Command Prompt** or **PowerShell**.
+
+### Clone the Repository
+
+```powershell
+git clone https://github.com/arunadh007/SignalLab.git
+cd SignalLab
+```
+
+### Run SignalLab
+
+```powershell
+python signal_lab.py
+```
+
+---
+
+## 🧰 Available Tools
+
+| Option | Tool | Description |
+|--------|------|-------------|
+| `1` | Phone Number Validator | Checks basic phone number formatting |
+| `2` | DNS / Host Lookup | Resolves a hostname to an IPv4 address |
+| `3` | Network Information | Displays local system and network information |
+| `4` | HTTP / API Tester | Tests an HTTP/HTTPS endpoint |
+| `5` | Connectivity Test | Checks TCP connectivity on port 443 |
+| `6` | View Logs | Displays SignalLab activity logs |
+| `7` | About SignalLab | Shows project information |
+| `0` | Exit | Closes SignalLab |
+
+---
+
+## 🎨 Interface
+
+```text
    _____ _                   _  _      _          _
   / ____(_)                 | || |    | |        | |
  | (___  _  __ _ _ __   __ _| || |    | |     ___| |__
@@ -106,9 +162,16 @@ Version 1.0.0
 [7] About SignalLab
 [0] Exit
 
-🔍 Example Usage
-DNS Lookup
+SignalLab >
+```
 
+---
+
+## 🔍 Example Usage
+
+### DNS Lookup
+
+```text
 SignalLab > 2
 
 Enter hostname: example.com
@@ -117,8 +180,11 @@ Enter hostname: example.com
 
 Host : example.com
 IPv4 : 93.184.216.34
+```
 
-API Testing 
+### API Testing
+
+```text
 SignalLab > 4
 
 Enter URL: https://example.com
@@ -130,16 +196,61 @@ Enter URL: https://example.com
 Status        : 200
 Response time : 123.45 ms
 Content-Type  : text/html
+```
 
-📝 Logging
+### Connectivity Test
 
-SignalLab automatically records local testing activity in: signallab.log
+```text
+SignalLab > 5
 
-Example: [2026-08-21 01:00:00] DNS lookup successful.
+Enter host (example.com): example.com
+
+[+] TCP connectivity available.
+
+Host : example.com
+Port : 443
+Time : 45.32 ms
+```
+
+### Phone Number Validation
+
+```text
+SignalLab > 1
+
+Enter phone number: +911234567890
+
+[+] Number format looks valid.
+
+Number : +911234567890
+Digits : 12
+Format : International/local numeric format
+```
+
+---
+
+## 📝 Logging
+
+SignalLab automatically records local testing activity in:
+
+```text
+signallab.log
+```
+
+Example:
+
+```text
+[2026-08-21 01:00:00] DNS lookup successful.
 [2026-08-21 01:01:10] API test: https://example.com | status=200 | time=123.45ms
+[2026-08-21 01:02:15] Connectivity test: example.com:443 | 45.32ms
+```
 
-📂 Project Structure
+The log file is generated automatically when SignalLab performs activities that create log entries.
 
+---
+
+## 📂 Project Structure
+
+```text
 SignalLab/
 ├── signal_lab.py
 ├── requirements.txt
@@ -147,61 +258,111 @@ SignalLab/
 ├── LICENSE
 ├── README.md
 └── signallab.log
+```
 
-signallab.log is generated automatically when SignalLab is used.
+> `signallab.log` is generated automatically when SignalLab is used and is excluded from Git tracking through `.gitignore`.
 
-🔐 Responsible Use
+---
+
+## 🔐 Responsible Use
 
 SignalLab is intended for:
 
-Educational purposes
-Software development
-Network diagnostics
-API testing
-Authorized security testing
-Local experimentation
+- Educational purposes
+- Software development
+- Network diagnostics
+- API testing
+- Authorized security testing
+- Local experimentation
 
-Only test systems and services that you own or have explicit permission to test.
+Only test systems, services, APIs, and resources that you own or have explicit permission to test.
 
-SignalLab does not provide SMS/call bombing, unsolicited messaging, or service-disruption functionality.
+SignalLab does **not** provide functionality for:
 
-🧪 Development
+- SMS bombing
+- Call bombing
+- Unsolicited messaging
+- Service disruption
+- Unauthorized access
+- Abuse of third-party services
+
+Users are responsible for complying with applicable laws, service policies, and authorization requirements.
+
+---
+
+## 🧪 Development
 
 SignalLab is written in Python and is designed to remain lightweight and dependency-free.
 
-Future versions may introduce additional diagnostic and testing modules while keeping the project simple and accessible.
+The project currently uses Python's standard library and does not require external packages.
 
-🗺️ Roadmap
- Command-line interface
- Phone number validation
- DNS lookup
- Network information
- HTTP/API testing
- TCP connectivity testing
- Local logging
- Modular plugin system
- Configuration system
- JSON output mode
- Advanced network diagnostics
- Automated test reports
+Future versions may introduce additional diagnostic and testing modules while keeping the project simple, portable, and accessible.
 
- 📄 License
+---
 
-SignalLab is released under the MIT License.
+## 🗺️ Roadmap
 
-See the LICENSE file for details.
+- [x] Command-line interface
+- [x] Phone number validation
+- [x] DNS / hostname lookup
+- [x] Network information
+- [x] HTTP / API testing
+- [x] TCP connectivity testing
+- [x] Local logging
+- [ ] Modular plugin system
+- [ ] Configuration system
+- [ ] JSON output mode
+- [ ] Advanced network diagnostics
+- [ ] Automated test reports
+- [ ] Improved error handling
+- [ ] Cross-platform improvements
 
-👤 Author
+---
 
-Arun Adhikari
+## 🤝 Contributing
+
+Contributions, suggestions, bug reports, and improvements are welcome.
+
+Before submitting a change:
+
+1. Fork the repository.
+2. Create a new branch.
+3. Make your changes.
+4. Test the changes locally.
+5. Submit a pull request.
+
+Please keep contributions focused, documented, and respectful of the project's responsible-use policy.
+
+---
+
+## 📄 License
+
+SignalLab is released under the **MIT License**.
+
+See the [LICENSE](LICENSE) file for details.
+
+---
+
+## 👤 Author
+
+**Arun Adhikari**
 
 GitHub: https://github.com/arunadh007
 
-⭐ Support
+---
+
+## ⭐ Support
 
 If you find SignalLab useful, consider giving the repository a ⭐ star and sharing it with other developers.
 
-SignalLab — Simple tools. Clean testing. Better diagnostics.
+---
 
+<div align="center">
 
+### 📡 SignalLab
 
+**Simple tools. Clean testing. Better diagnostics.**
+
+Made with ❤️ using Python.
+
+</div>
