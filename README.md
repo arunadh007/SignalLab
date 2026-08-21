@@ -1,24 +1,26 @@
 # 📡 SignalLab
 
-> A lightweight and modular Python toolkit for network diagnostics, API testing, connectivity checks, and developer-focused communication service testing.
+> A lightweight and modular Python toolkit for domain intelligence, network diagnostics, disposable inbox testing, synthetic identity generation, and developer-focused research.
 
-SignalLab is designed for developers, testers, students, and security researchers who need a simple command-line toolkit for authorized testing and network diagnostics.
+SignalLab is designed for developers, testers, students, and security researchers who need a simple command-line toolkit for authorized testing, network diagnostics, domain research, and synthetic test-data generation.
 
 ---
 
 ## ✨ Features
 
-- 📱 Phone number format validation
-- 🌐 DNS / hostname lookup
-- 🖥️ System and network information
-- 🔗 HTTP / API endpoint testing
-- ⚡ TCP connectivity testing
-- 📝 Local activity logging
+- 🔎 Domain Investigator
+- 📧 Disposable Inbox
+- 🌐 DNS / Host Lookup
+- 🖥️ Network Information
+- 👤 Synthetic Identity Generator
+- ⚡ TCP Connectivity Testing
+- 📝 Local Activity Logging
 - 🎨 Clean command-line interface
 - 🐧 Linux support
 - 📱 Termux support
 - 🪟 Windows support
 - 🐍 Built with Python
+- 🌍 Cross-platform support
 - 🔒 Designed for authorized testing
 
 ---
@@ -28,8 +30,11 @@ SignalLab is designed for developers, testers, students, and security researcher
 - Python 3.8 or newer
 - Linux, Termux, or Windows
 - Git
+- Internet connection for online features
 
-SignalLab currently uses only Python standard-library modules, so no external Python packages are required.
+SignalLab primarily uses Python standard-library modules.
+
+The Identity Generator uses the Random User API for synthetic test data.
 
 ---
 
@@ -48,7 +53,13 @@ cd SignalLab
 python signal_lab.py
 ```
 
-On Linux or some Termux installations:
+If your system uses the Python launcher:
+
+```bash
+py signal_lab.py
+```
+
+On Linux:
 
 ```bash
 python3 signal_lab.py
@@ -106,7 +117,7 @@ python3 signal_lab.py
 
 ## 🪟 Windows
 
-Install Python and Git, then open **Command Prompt** or **PowerShell**.
+Install Python and Git, then open **PowerShell** or **Command Prompt**.
 
 ### Clone the Repository
 
@@ -121,20 +132,27 @@ cd SignalLab
 python signal_lab.py
 ```
 
+If `python` is unavailable:
+
+```powershell
+py signal_lab.py
+```
+
 ---
 
 ## 🧰 Available Tools
 
 | Option | Tool | Description |
 |--------|------|-------------|
-| `1` | Phone Number Validator | Checks basic phone number formatting |
-| `2` | DNS / Host Lookup | Resolves a hostname to an IPv4 address |
-| `3` | Network Information | Displays local system and network information |
-| `4` | HTTP / API Tester | Tests an HTTP/HTTPS endpoint |
-| `5` | Connectivity Test | Checks TCP connectivity on port 443 |
-| `6` | View Logs | Displays SignalLab activity logs |
-| `7` | About SignalLab | Shows project information |
-| `0` | Exit | Closes SignalLab |
+| `1` | 🔎 Domain Investigator | Looks up public domain registration and RDAP information |
+| `2` | 📧 Disposable Inbox | Creates and checks a temporary development mailbox |
+| `3` | 🌐 DNS / Host Lookup | Resolves hostnames and displays IPv4 addresses |
+| `4` | 🖥️ Network Information | Displays local system and network information |
+| `5` | 👤 Identity Generator | Generates synthetic test identity data |
+| `6` | ⚡ Connectivity Test | Checks TCP connectivity on port 443 |
+| `7` | 📝 View Logs | Displays SignalLab activity logs |
+| `8` | ℹ️ About SignalLab | Shows project information |
+| `0` | 🚪 Exit | Closes SignalLab |
 
 ---
 
@@ -146,20 +164,21 @@ python signal_lab.py
  | (___  _  __ _ _ __   __ _| || |    | |     ___| |__
   \___ \| |/ _` | '_ \ / _` | || |_   | |    / _ \ '_ \
   ____) | | (_| | | | | (_| |__   _|  | |___|  __/ |_) |
- |_____/|_|\__, |_| |_|\__,_|  |_|    |______\___|_.__/
+ |_____/|_|\__, |_| |_|_|\__,_|  |_|    |______\___|_.__/
              __/ |
             |___/
 
-Network & API Testing Toolkit
-Version 1.0.0
+Network, Domain, Mail & OSINT Toolkit
+Version 4.0.0
 
-[1] Phone Number Validator
-[2] DNS / Host Lookup
-[3] Network Information
-[4] HTTP / API Tester
-[5] Connectivity Test
-[6] View Logs
-[7] About SignalLab
+[1] Domain Investigator
+[2] Disposable Inbox
+[3] DNS / Host Lookup
+[4] Network Information
+[5] Identity Generator
+[6] Connectivity Test
+[7] View Logs
+[8] About SignalLab
 [0] Exit
 
 SignalLab >
@@ -167,41 +186,216 @@ SignalLab >
 
 ---
 
-## 🔍 Example Usage
+## 🔎 Domain Investigator
 
-### DNS Lookup
+Domain Investigator retrieves publicly available RDAP registration information for a domain.
+
+### Example
 
 ```text
-SignalLab > 2
+SignalLab > 1
+
+DOMAIN INVESTIGATOR
+
+Enter domain: example.com
+
+[*] Looking up registration data...
+
+DOMAIN INFORMATION
+--------------------------------
+
+Domain       : example.com
+Status       : Registered
+Registration : YYYY-MM-DD
+Expiration   : YYYY-MM-DD
+Last Updated : YYYY-MM-DD
+Registrar    : Example Registrar
+RDAP Server  : https://...
+
+Domain Status:
+  • active
+
+Name Servers:
+  • example.ns.cloudflare.com
+  • example2.ns.cloudflare.com
+```
+
+### Information Available
+
+- Domain name
+- Registration date
+- Expiration date
+- Last updated date
+- Registrar
+- RDAP server
+- Domain status
+- Name servers
+
+Only publicly available registration information is used.
+
+---
+
+## 📧 Disposable Inbox
+
+The Disposable Inbox module provides a temporary mailbox for development and testing workflows.
+
+### Features
+
+- Generate disposable email address
+- Refresh inbox
+- View received messages
+- Delete mailbox
+- Maintain local mailbox session
+
+### Example
+
+```text
+DISPOSABLE INBOX
+
+Address : example123@temporary-domain.com
+
+[1] Generate New Disposable Email
+[2] Refresh Inbox
+[3] Read Message
+[4] Delete Mailbox
+[5] Generate Another Address
+[0] Back
+```
+
+Use disposable mailboxes only for legitimate testing and development purposes.
+
+---
+
+## 🌐 DNS / Host Lookup
+
+Resolve a hostname and display its IPv4 address.
+
+### Example
+
+```text
+SignalLab > 3
+
+DNS / HOST LOOKUP
 
 Enter hostname: example.com
 
 [+] DNS lookup successful.
 
-Host : example.com
-IPv4 : 93.184.216.34
+Host        : example.com
+IPv4 #1     : 93.184.216.34
+Lookup time : 25.42 ms
 ```
 
-### API Testing
+Useful for DNS troubleshooting, connectivity diagnostics, and development testing.
+
+---
+
+## 🖥️ Network Information
+
+Displays basic information about the local system and network environment.
+
+### Example
 
 ```text
-SignalLab > 4
+NETWORK INFORMATION
 
-Enter URL: https://example.com
+SYSTEM
 
-[*] Testing endpoint...
+Hostname      : Arun-PC
+System        : Windows
+Release       : 11
+Machine       : AMD64
+Python        : 3.x.x
 
-[+] Request completed.
+NETWORK
 
-Status        : 200
-Response time : 123.45 ms
-Content-Type  : text/html
+Local IP      : 192.168.x.x
+Public IPv4   : xxx.xxx.xxx.xxx
+FQDN          : Arun-PC
 ```
 
-### Connectivity Test
+The module is intended for local diagnostics and development.
+
+---
+
+## 👤 Identity Generator
+
+SignalLab includes a synthetic identity generator for application development and testing.
+
+The generator uses the Random User API to retrieve randomly generated test identities.
+
+### Available Options
 
 ```text
-SignalLab > 5
+IDENTITY GENERATOR
+
+[1] Generate Random Identity
+[2] Generate US Identity
+[3] Generate Indian Identity
+[4] Generate UK Identity
+[5] Choose Nationality
+[6] Choose Gender
+[7] Generate Multiple Identities
+[0] Back
+```
+
+### Example Output
+
+```text
+GENERATED TEST IDENTITY
+================================
+
+Name         : Example User
+Gender       : Female
+Country      : United States
+
+Address      : 123 Example Street
+City         : Austin
+State        : Texas
+ZIP/Postcode : 78701
+
+Email        : example@example.com
+Phone        : (000) 000-0000
+Mobile       : (000) 000-0000
+
+Date of Birth: 1994-07-18
+Age          : 30
+Username     : example_user
+Nationality  : US
+
+Picture      : https://...
+
+================================
+
+⚠ SYNTHETIC TEST DATA
+For software testing and development.
+```
+
+### Supported Nationalities
+
+- 🇺🇸 United States
+- 🇮🇳 India
+- 🇬🇧 United Kingdom
+- 🇨🇦 Canada
+- 🇦🇺 Australia
+- 🇩🇪 Germany
+- 🇫🇷 France
+- 🌍 Random
+
+The generated information is synthetic test data and should not be treated as the identity of a real person.
+
+---
+
+## ⚡ Connectivity Test
+
+Tests TCP connectivity to port `443`.
+
+### Example
+
+```text
+SignalLab > 6
+
+CONNECTIVITY TEST
 
 Enter host (example.com): example.com
 
@@ -209,28 +403,16 @@ Enter host (example.com): example.com
 
 Host : example.com
 Port : 443
-Time : 45.32 ms
+Time : 42.31 ms
 ```
 
-### Phone Number Validation
-
-```text
-SignalLab > 1
-
-Enter phone number: +911234567890
-
-[+] Number format looks valid.
-
-Number : +911234567890
-Digits : 12
-Format : International/local numeric format
-```
+Useful for basic connectivity troubleshooting and authorized diagnostics.
 
 ---
 
 ## 📝 Logging
 
-SignalLab automatically records local testing activity in:
+SignalLab automatically records local activity in:
 
 ```text
 signallab.log
@@ -239,12 +421,12 @@ signallab.log
 Example:
 
 ```text
-[2026-08-21 01:00:00] DNS lookup successful.
-[2026-08-21 01:01:10] API test: https://example.com | status=200 | time=123.45ms
-[2026-08-21 01:02:15] Connectivity test: example.com:443 | 45.32ms
+[2026-08-21 12:00:00] DNS lookup: example.com
+[2026-08-21 12:01:20] Domain Investigator: example.com
+[2026-08-21 12:02:10] Identity Generator: 1 synthetic identities generated.
 ```
 
-The log file is generated automatically when SignalLab performs activities that create log entries.
+The log file is generated automatically when SignalLab is used.
 
 ---
 
@@ -260,7 +442,7 @@ SignalLab/
 └── signallab.log
 ```
 
-> `signallab.log` is generated automatically when SignalLab is used and is excluded from Git tracking through `.gitignore`.
+> `signallab.log` is generated automatically when SignalLab is used.
 
 ---
 
@@ -271,20 +453,21 @@ SignalLab is intended for:
 - Educational purposes
 - Software development
 - Network diagnostics
-- API testing
+- Domain research
 - Authorized security testing
 - Local experimentation
+- Synthetic test-data generation
 
-Only test systems, services, APIs, and resources that you own or have explicit permission to test.
+Only test systems, services, APIs, domains, and resources that you own or have explicit permission to test.
 
-SignalLab does **not** provide functionality for:
+SignalLab should not be used to:
 
-- SMS bombing
-- Call bombing
-- Unsolicited messaging
-- Service disruption
-- Unauthorized access
-- Abuse of third-party services
+- Access accounts without authorization
+- Collect private personal information
+- Bypass authentication
+- Intercept third-party verification codes
+- Disrupt services
+- Conduct unauthorized security testing
 
 Users are responsible for complying with applicable laws, service policies, and authorization requirements.
 
@@ -292,30 +475,30 @@ Users are responsible for complying with applicable laws, service policies, and 
 
 ## 🧪 Development
 
-SignalLab is written in Python and is designed to remain lightweight and dependency-free.
+SignalLab is written in Python and is designed to remain lightweight, portable, and easy to extend.
 
-The project currently uses Python's standard library and does not require external packages.
-
-Future versions may introduce additional diagnostic and testing modules while keeping the project simple, portable, and accessible.
+Most modules use Python's standard library. Online features use public APIs and RDAP services where applicable.
 
 ---
 
 ## 🗺️ Roadmap
 
 - [x] Command-line interface
-- [x] Phone number validation
+- [x] Domain Investigator
+- [x] RDAP domain lookup
 - [x] DNS / hostname lookup
 - [x] Network information
-- [x] HTTP / API testing
 - [x] TCP connectivity testing
 - [x] Local logging
+- [x] Disposable Inbox
+- [x] Synthetic Identity Generator
+- [x] Multiple identity generation
 - [ ] Modular plugin system
 - [ ] Configuration system
 - [ ] JSON output mode
+- [ ] Export test data
 - [ ] Advanced network diagnostics
-- [ ] Automated test reports
-- [ ] Improved error handling
-- [ ] Cross-platform improvements
+- [ ] Automated diagnostic reports
 
 ---
 
@@ -332,6 +515,14 @@ Before submitting a change:
 5. Submit a pull request.
 
 Please keep contributions focused, documented, and respectful of the project's responsible-use policy.
+
+---
+
+## 📦 Version
+
+```text
+SignalLab v4.0.0
+```
 
 ---
 
