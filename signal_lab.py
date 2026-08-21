@@ -6,22 +6,19 @@ import platform
 import random
 import re
 import socket
-import string
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 APP_NAME = "SignalLab"
-VERSION = "3.1.0"
-
+VERSION = "4.0.0"
 LOG_FILE = "signallab.log"
-MAIL_SESSION_FILE = "tempmail_session.json"
 
-MAIL_API = "https://api.mail.tm"
+API_URL = "https://randomuser.me/api/"
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -63,79 +60,65 @@ def pause():
 
 
 def write_log(message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
     try:
-        with open(LOG_FILE, "a", encoding="utf-8") as file:
-            file.write(f"[{timestamp}] {message}\n")
+        with open(
+            LOG_FILE,
+            "a",
+            encoding="utf-8"
+        ) as file:
+
+            file.write(
+                f"[{timestamp}] {message}\n"
+            )
+
     except OSError:
         pass
 
 
 def success(message):
-    print(f"{GREEN}[+] {message}{RESET}")
+    print(
+        f"{GREEN}[+] {message}{RESET}"
+    )
+
     write_log(message)
 
 
 def error(message):
-    print(f"{RED}[!] {message}{RESET}")
-    write_log(f"ERROR: {message}")
+    print(
+        f"{RED}[!] {message}{RESET}"
+    )
+
+    write_log(
+        f"ERROR: {message}"
+    )
 
 
 def info(message):
-    print(f"{BLUE}[*] {message}{RESET}")
-
-
-def normalize_domain(domain):
-    domain = domain.strip().lower()
-
-    if "://" in domain:
-        parsed = urllib.parse.urlparse(domain)
-        domain = parsed.hostname or ""
-
-    domain = domain.split("/")[0]
-    domain = domain.split(":")[0]
-
-    return domain.rstrip(".")
-
-
-def valid_domain(domain):
-    pattern = (
-        r"^(?=.{1,253}$)"
-        r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
-        r"[a-z]{2,63}$"
+    print(
+        f"{BLUE}[*] {message}{RESET}"
     )
 
-    return bool(re.match(pattern, domain, re.I))
-
 
 # ============================================================
-# HTTP REQUEST
+# HTTP / API
 # ============================================================
 
-def api_request(url, method="GET", data=None, headers=None, timeout=15):
-
-    request_headers = {
-        "User-Agent": "SignalLab/3.1"
-    }
-
-    if headers:
-        request_headers.update(headers)
-
-    body = None
-
-    if data is not None:
-        body = json.dumps(data).encode("utf-8")
-        request_headers["Content-Type"] = "application/json"
+def api_get(url, timeout=20):
 
     request = urllib.request.Request(
         url,
-        data=body,
-        headers=request_headers,
-        method=method
+        headers={
+            "User-Agent":
+            "SignalLab/4.0"
+        }
     )
 
     try:
+
         with urllib.request.urlopen(
             request,
             timeout=timeout
@@ -146,751 +129,66 @@ def api_request(url, method="GET", data=None, headers=None, timeout=15):
                 errors="replace"
             )
 
-            if not raw:
-                return response.status, {}
-
-            try:
-                return response.status, json.loads(raw)
-
-            except json.JSONDecodeError:
-                return response.status, raw
+            return json.loads(raw)
 
     except urllib.error.HTTPError as exc:
 
-        raw = exc.read().decode(
-            "utf-8",
-            errors="replace"
+        raise RuntimeError(
+            f"HTTP error {exc.code}"
         )
 
-        try:
-            data = json.loads(raw)
-
-        except Exception:
-            data = raw
+    except urllib.error.URLError as exc:
 
         raise RuntimeError(
-            f"HTTP {exc.code}: {data}"
+            f"Network error: {exc.reason}"
         )
 
-
-# ============================================================
-# DISPOSABLE INBOX
-# ============================================================
-
-def save_mail_session(session):
-
-    try:
-        with open(
-            MAIL_SESSION_FILE,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                session,
-                file,
-                indent=2
-            )
-
-    except OSError as exc:
-        error(
-            f"Unable to save mail session: {exc}"
-        )
-
-
-def load_mail_session():
-
-    if not os.path.exists(
-        MAIL_SESSION_FILE
-    ):
-        return None
-
-    try:
-        with open(
-            MAIL_SESSION_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            return json.load(file)
-
-    except Exception:
-        return None
-
-
-def delete_mail_session():
-
-    try:
-
-        if os.path.exists(
-            MAIL_SESSION_FILE
-        ):
-            os.remove(
-                MAIL_SESSION_FILE
-            )
-
-    except OSError:
-        pass
-
-
-def random_username():
-
-    chars = (
-        string.ascii_lowercase
-        + string.digits
-    )
-
-    return (
-        "".join(
-            random.choice(chars)
-            for _ in range(8)
-        )
-        + str(random.randint(100, 999))
-    )
-
-
-def random_password():
-
-    chars = (
-        string.ascii_letters
-        + string.digits
-        + "!@#$%^&*"
-    )
-
-    return "".join(
-        random.choice(chars)
-        for _ in range(18)
-    )
-
-
-def get_temp_domains():
-
-    _, data = api_request(
-        f"{MAIL_API}/domains"
-    )
-
-    domains = []
-
-    for item in data.get(
-        "hydra:member",
-        []
-    ):
-
-        domain = item.get(
-            "domain"
-        )
-
-        if domain and item.get(
-            "isActive",
-            True
-        ):
-
-            domains.append(
-                domain
-            )
-
-    return domains
-
-
-def create_disposable_mail():
-
-    print()
-
-    info(
-        "Getting available disposable mail domains..."
-    )
-
-    try:
-
-        domains = get_temp_domains()
-
-        if not domains:
-
-            error(
-                "No temporary mail domains are available."
-            )
-
-            return
-
-        domain = domains[0]
-
-        username = random_username()
-        password = random_password()
-
-        address = f"{username}@{domain}"
-
-        info(
-            f"Creating mailbox: {address}"
-        )
-
-        status, account = api_request(
-            f"{MAIL_API}/accounts",
-            method="POST",
-            data={
-                "address": address,
-                "password": password
-            }
-        )
-
-        if status not in (
-            200,
-            201
-        ):
-
-            error(
-                "Unable to create mailbox."
-            )
-
-            return
-
-        _, token_data = api_request(
-            f"{MAIL_API}/token",
-            method="POST",
-            data={
-                "address": address,
-                "password": password
-            }
-        )
-
-        token = token_data.get(
-            "token"
-        )
-
-        if not token:
-
-            error(
-                "Mailbox created but authentication token was not received."
-            )
-
-            return
-
-        session = {
-            "id": account.get("id"),
-            "address": address,
-            "password": password,
-            "token": token,
-            "created_at": datetime.now().isoformat()
-        }
-
-        save_mail_session(
-            session
-        )
-
-        print()
-
-        success(
-            "Disposable mailbox created."
-        )
-
-        print(
-            f"\n{BOLD}Your Disposable Email:{RESET}"
-        )
-
-        print(
-            f"{CYAN}{address}{RESET}"
-        )
-
-        print(
-            f"\nCreated: {session['created_at']}"
-        )
-
-        write_log(
-            f"Disposable mailbox created: {address}"
-        )
-
-    except Exception as exc:
-
-        error(
-            f"Disposable Inbox error: {exc}"
-        )
-
-
-def show_current_mail():
-
-    session = load_mail_session()
-
-    if not session:
-
-        print(
-            f"{YELLOW}No disposable mailbox is active.{RESET}"
-        )
-
-        return
-
-    print(
-        f"{BOLD}{WHITE}"
-        "CURRENT DISPOSABLE INBOX"
-        f"{RESET}"
-    )
-
-    print(
-        "--------------------------------"
-    )
-
-    print(
-        f"Address : "
-        f"{CYAN}{session.get('address')}{RESET}"
-    )
-
-    print(
-        f"Created : "
-        f"{session.get('created_at', 'Unknown')}"
-    )
-
-
-def get_mail_messages():
-
-    session = load_mail_session()
-
-    if not session:
+    except json.JSONDecodeError:
 
         raise RuntimeError(
-            "No active disposable mailbox."
+            "API returned invalid JSON."
         )
-
-    headers = {
-        "Authorization":
-        f"Bearer {session['token']}"
-    }
-
-    _, data = api_request(
-        f"{MAIL_API}/messages",
-        headers=headers
-    )
-
-    return data.get(
-        "hydra:member",
-        []
-    )
-
-
-def refresh_inbox():
-
-    clear_screen()
-    banner()
-
-    print(
-        f"{BOLD}{WHITE}"
-        "DISPOSABLE INBOX"
-        f"{RESET}\n"
-    )
-
-    session = load_mail_session()
-
-    if not session:
-
-        info(
-            "No disposable mailbox exists."
-        )
-
-        print(
-            "\nUse option 1 to generate one."
-        )
-
-        pause()
-
-        return
-
-    print(
-        f"Address : "
-        f"{CYAN}{session['address']}{RESET}\n"
-    )
-
-    try:
-
-        messages = get_mail_messages()
-
-        if not messages:
-
-            info(
-                "Inbox is empty."
-            )
-
-            pause()
-
-            return
-
-        print(
-            f"{BOLD}MESSAGES{RESET}"
-        )
-
-        print(
-            "--------------------------------"
-        )
-
-        for index, message in enumerate(
-            messages,
-            1
-        ):
-
-            sender = (
-                message
-                .get("from", {})
-                .get("address", "Unknown")
-            )
-
-            subject = message.get(
-                "subject",
-                "(No subject)"
-            )
-
-            status = (
-                "READ"
-                if message.get("seen")
-                else "NEW"
-            )
-
-            print(
-                f"[{index}] {status:<4} {sender}"
-            )
-
-            print(
-                f"    Subject: {subject}"
-            )
-
-            print()
-
-        write_log(
-            f"Disposable Inbox refreshed: "
-            f"{len(messages)} messages"
-        )
-
-    except Exception as exc:
-
-        error(
-            f"Unable to fetch inbox: {exc}"
-        )
-
-    pause()
-
-
-def read_message():
-
-    clear_screen()
-    banner()
-
-    print(
-        f"{BOLD}{WHITE}"
-        "READ MESSAGE"
-        f"{RESET}\n"
-    )
-
-    session = load_mail_session()
-
-    if not session:
-
-        error(
-            "No active disposable mailbox."
-        )
-
-        pause()
-
-        return
-
-    try:
-
-        messages = get_mail_messages()
-
-        if not messages:
-
-            info(
-                "Inbox is empty."
-            )
-
-            pause()
-
-            return
-
-        print(
-            "Available messages:\n"
-        )
-
-        for index, message in enumerate(
-            messages,
-            1
-        ):
-
-            print(
-                f"[{index}] "
-                f"{message.get('subject', '(No subject)')}"
-            )
-
-        print()
-
-        choice = input(
-            "Select message number: "
-        ).strip()
-
-        if not choice.isdigit():
-
-            error(
-                "Invalid message number."
-            )
-
-            pause()
-
-            return
-
-        index = int(choice) - 1
-
-        if index < 0 or index >= len(messages):
-
-            error(
-                "Message does not exist."
-            )
-
-            pause()
-
-            return
-
-        message_id = messages[index].get(
-            "id"
-        )
-
-        headers = {
-            "Authorization":
-            f"Bearer {session['token']}"
-        }
-
-        _, message = api_request(
-            f"{MAIL_API}/messages/{message_id}",
-            headers=headers
-        )
-
-        sender = (
-            message
-            .get("from", {})
-            .get("address", "Unknown")
-        )
-
-        subject = message.get(
-            "subject",
-            "(No subject)"
-        )
-
-        created = message.get(
-            "createdAt",
-            "Unknown"
-        )
-
-        text = message.get(
-            "text",
-            ""
-        )
-
-        print()
-
-        print(
-            f"{BOLD}MESSAGE{RESET}"
-        )
-
-        print(
-            "--------------------------------"
-        )
-
-        print(
-            f"From    : {sender}"
-        )
-
-        print(
-            f"Subject : {subject}"
-        )
-
-        print(
-            f"Date    : {created}"
-        )
-
-        print(
-            "\nMessage Body:"
-        )
-
-        print(
-            "--------------------------------"
-        )
-
-        print(
-            text
-            if text
-            else "(No plain-text body available.)"
-        )
-
-        write_log(
-            f"Disposable Inbox message opened: {subject}"
-        )
-
-    except Exception as exc:
-
-        error(
-            f"Unable to read message: {exc}"
-        )
-
-    pause()
-
-
-def delete_disposable_mailbox():
-
-    clear_screen()
-    banner()
-
-    print(
-        f"{BOLD}{WHITE}"
-        "DELETE DISPOSABLE MAILBOX"
-        f"{RESET}\n"
-    )
-
-    session = load_mail_session()
-
-    if not session:
-
-        info(
-            "No active mailbox."
-        )
-
-        pause()
-
-        return
-
-    address = session.get(
-        "address"
-    )
-
-    confirm = input(
-        f"Delete {address}? (yes/no): "
-    ).strip().lower()
-
-    if confirm != "yes":
-
-        info(
-            "Mailbox deletion cancelled."
-        )
-
-        pause()
-
-        return
-
-    try:
-
-        headers = {
-            "Authorization":
-            f"Bearer {session['token']}"
-        }
-
-        api_request(
-            f"{MAIL_API}/accounts/{session['id']}",
-            method="DELETE",
-            headers=headers
-        )
-
-        delete_mail_session()
-
-        success(
-            "Disposable mailbox deleted."
-        )
-
-        write_log(
-            f"Disposable mailbox deleted: {address}"
-        )
-
-    except Exception as exc:
-
-        error(
-            f"Unable to delete mailbox: {exc}"
-        )
-
-    pause()
-
-
-def disposable_inbox():
-
-    while True:
-
-        clear_screen()
-        banner()
-
-        print(
-            f"{BOLD}{WHITE}"
-            "DISPOSABLE INBOX"
-            f"{RESET}\n"
-        )
-
-        show_current_mail()
-
-        print()
-
-        print(
-            f"{CYAN}[1]{RESET} "
-            "Generate New Disposable Email"
-        )
-
-        print(
-            f"{CYAN}[2]{RESET} "
-            "Refresh Inbox"
-        )
-
-        print(
-            f"{CYAN}[3]{RESET} "
-            "Read Message"
-        )
-
-        print(
-            f"{CYAN}[4]{RESET} "
-            "Delete Mailbox"
-        )
-
-        print(
-            f"{CYAN}[5]{RESET} "
-            "Generate Another Address"
-        )
-
-        print(
-            f"{CYAN}[0]{RESET} "
-            "Back"
-        )
-
-        print()
-
-        choice = input(
-            f"{BOLD}Disposable Inbox > {RESET}"
-        ).strip()
-
-        if choice == "1":
-
-            create_disposable_mail()
-            pause()
-
-        elif choice == "2":
-
-            refresh_inbox()
-
-        elif choice == "3":
-
-            read_message()
-
-        elif choice == "4":
-
-            delete_disposable_mailbox()
-
-        elif choice == "5":
-
-            create_disposable_mail()
-            pause()
-
-        elif choice == "0":
-
-            break
-
-        else:
-
-            error(
-                "Invalid option."
-            )
-
-            time.sleep(1)
 
 
 # ============================================================
-# DOMAIN INVESTIGATOR
+# DOMAIN
 # ============================================================
+
+def normalize_domain(domain):
+
+    domain = domain.strip().lower()
+
+    if "://" in domain:
+
+        parsed = urllib.parse.urlparse(
+            domain
+        )
+
+        domain = parsed.hostname or ""
+
+    domain = domain.split("/")[0]
+    domain = domain.split(":")[0]
+
+    return domain.rstrip(".")
+
+
+def valid_domain(domain):
+
+    pattern = (
+        r"^(?=.{1,253}$)"
+        r"(?:[a-z0-9]"
+        r"(?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+        r"[a-z]{2,63}$"
+    )
+
+    return bool(
+        re.match(
+            pattern,
+            domain,
+            re.I
+        )
+    )
+
 
 def get_rdap_server(domain):
 
@@ -900,7 +198,7 @@ def get_rdap_server(domain):
 
     try:
 
-        _, data = api_request(
+        data = api_get(
             "https://data.iana.org/rdap/dns.json"
         )
 
@@ -936,14 +234,12 @@ def format_rdap_date(value):
 
     try:
 
-        parsed = datetime.fromisoformat(
+        return datetime.fromisoformat(
             value.replace(
                 "Z",
                 "+00:00"
             )
-        )
-
-        return parsed.strftime(
+        ).strftime(
             "%Y-%m-%d"
         )
 
@@ -961,7 +257,9 @@ def extract_event(events, event_name):
         ) == event_name:
 
             return format_rdap_date(
-                event.get("eventDate")
+                event.get(
+                    "eventDate"
+                )
             )
 
     return "Not available"
@@ -982,10 +280,10 @@ def extract_registrar(entities):
             []
         )
 
-        if isinstance(
-            vcard,
-            list
-        ) and len(vcard) > 1:
+        if (
+            isinstance(vcard, list)
+            and len(vcard) > 1
+        ):
 
             for item in vcard[1]:
 
@@ -1018,16 +316,13 @@ def domain_investigator():
         domain
     )
 
-    if not valid_domain(
-        domain
-    ):
+    if not valid_domain(domain):
 
         error(
             "Please enter a valid domain."
         )
 
         pause()
-
         return
 
     info(
@@ -1037,28 +332,25 @@ def domain_investigator():
 
     try:
 
-        rdap_server = get_rdap_server(
+        server = get_rdap_server(
             domain
         )
 
-        if not rdap_server:
+        if not server:
 
             error(
                 "No RDAP server found."
             )
 
             pause()
-
             return
 
         url = (
-            f"{rdap_server}/domain/"
+            f"{server}/domain/"
             f"{urllib.parse.quote(domain)}"
         )
 
-        _, data = api_request(
-            url
-        )
+        data = api_get(url)
 
         registration = extract_event(
             data.get("events"),
@@ -1079,9 +371,61 @@ def domain_investigator():
             data.get("entities")
         )
 
+        print()
+
+        print(
+            f"{BOLD}DOMAIN INFORMATION{RESET}"
+        )
+
+        print(
+            "--------------------------------"
+        )
+
+        print(
+            f"Domain       : {domain}"
+        )
+
+        print(
+            "Status       : Registered"
+        )
+
+        print(
+            f"Registration : {registration}"
+        )
+
+        print(
+            f"Expiration   : {expiration}"
+        )
+
+        print(
+            f"Last Updated : {updated}"
+        )
+
+        print(
+            f"Registrar    : {registrar}"
+        )
+
+        print(
+            f"RDAP Server  : {server}"
+        )
+
+        print(
+            "\nDomain Status:"
+        )
+
         statuses = data.get(
             "status",
             []
+        )
+
+        for status in statuses:
+
+            print(
+                f"  • {status}"
+            )
+
+        print(
+            "\nName Servers:"
         )
 
         nameservers = []
@@ -1096,69 +440,16 @@ def domain_investigator():
             )
 
             if name:
-
                 nameservers.append(
                     name.rstrip(".")
                 )
 
-        print()
-
-        print(
-            f"{BOLD}DOMAIN INFORMATION{RESET}"
-        )
-
-        print(
-            "--------------------------------"
-        )
-
-        print(
-            f"Domain          : {domain}"
-        )
-
-        print(
-            "Status          : Registered"
-        )
-
-        print(
-            f"Registration    : {registration}"
-        )
-
-        print(
-            f"Expiration      : {expiration}"
-        )
-
-        print(
-            f"Last Updated    : {updated}"
-        )
-
-        print(
-            f"Registrar       : {registrar}"
-        )
-
-        print(
-            f"RDAP Server     : {rdap_server}"
-        )
-
-        print(
-            "\nDomain Status:"
-        )
-
-        for status in statuses:
-
-            print(
-                f"  • {status}"
-            )
-
-        print(
-            "\nName Servers:"
-        )
-
         if nameservers:
 
-            for server in nameservers:
+            for ns in nameservers:
 
                 print(
-                    f"  • {server}"
+                    f"  • {ns}"
                 )
 
         else:
@@ -1171,35 +462,17 @@ def domain_investigator():
             f"Domain Investigator: {domain}"
         )
 
-    except urllib.error.HTTPError as exc:
-
-        if exc.code == 404:
-
-            print(
-                f"\nDomain : {domain}"
-            )
-
-            print(
-                "Status : NOT REGISTERED"
-            )
-
-        else:
-
-            error(
-                f"RDAP HTTP error: {exc.code}"
-            )
-
     except Exception as exc:
 
         error(
-            f"RDAP lookup failed: {exc}"
+            f"Domain lookup failed: {exc}"
         )
 
     pause()
 
 
 # ============================================================
-# DNS / HOST LOOKUP
+# DNS
 # ============================================================
 
 def dns_lookup():
@@ -1228,14 +501,13 @@ def dns_lookup():
         )
 
         pause()
-
         return
 
     try:
 
         start = time.perf_counter()
 
-        addresses = socket.getaddrinfo(
+        results = socket.getaddrinfo(
             hostname,
             None,
             socket.AF_INET
@@ -1249,18 +521,16 @@ def dns_lookup():
         ips = sorted(
             set(
                 item[4][0]
-                for item in addresses
+                for item in results
             )
         )
-
-        print()
 
         success(
             "DNS lookup successful."
         )
 
         print(
-            f"  Host        : {hostname}"
+            f"\nHost        : {hostname}"
         )
 
         for index, ip in enumerate(
@@ -1269,11 +539,11 @@ def dns_lookup():
         ):
 
             print(
-                f"  IPv4 #{index}: {ip}"
+                f"IPv4 #{index}  : {ip}"
             )
 
         print(
-            f"  Lookup time : {elapsed:.2f} ms"
+            f"Lookup time : {elapsed:.2f} ms"
         )
 
         write_log(
@@ -1312,7 +582,7 @@ def network_info():
             hostname
         )
 
-    except socket.gaierror:
+    except Exception:
 
         local_ip = "Unavailable"
 
@@ -1363,17 +633,9 @@ def network_info():
         f"Public IPv4   : {public_ip}"
     )
 
-    try:
-
-        print(
-            f"FQDN          : {socket.getfqdn()}"
-        )
-
-    except Exception:
-
-        print(
-            "FQDN          : Unavailable"
-        )
+    print(
+        f"FQDN          : {socket.getfqdn()}"
+    )
 
     write_log(
         "Displayed network information."
@@ -1383,7 +645,447 @@ def network_info():
 
 
 # ============================================================
-# CONNECTIVITY TEST
+# IDENTITY GENERATOR
+# ============================================================
+
+NATIONALITIES = {
+    "1": ("United States", "us"),
+    "2": ("India", "in"),
+    "3": ("United Kingdom", "gb"),
+    "4": ("Canada", "ca"),
+    "5": ("Australia", "au"),
+    "6": ("Germany", "de"),
+    "7": ("France", "fr"),
+    "8": ("Random", None),
+}
+
+
+def generate_identity(
+    nationality=None,
+    gender=None,
+    results=1
+):
+
+    params = {
+        "results": results,
+        "inc": (
+            "gender,name,location,email,"
+            "login,dob,phone,cell,picture,nat"
+        )
+    }
+
+    if nationality:
+
+        params["nat"] = nationality
+
+    if gender in (
+        "male",
+        "female"
+    ):
+
+        params["gender"] = gender
+
+    query = urllib.parse.urlencode(
+        params
+    )
+
+    url = (
+        f"{API_URL}?{query}"
+    )
+
+    return api_get(url)
+
+
+def print_identity(user, number=None):
+
+    if number is not None:
+
+        print(
+            f"\n{BOLD}{CYAN}"
+            f"IDENTITY #{number}"
+            f"{RESET}"
+        )
+
+    else:
+
+        print(
+            f"\n{BOLD}{CYAN}"
+            "GENERATED TEST IDENTITY"
+            f"{RESET}"
+        )
+
+    print(
+        "================================"
+    )
+
+    name = user.get(
+        "name",
+        {}
+    )
+
+    location = user.get(
+        "location",
+        {}
+    )
+
+    street = location.get(
+        "street",
+        {}
+    )
+
+    dob = user.get(
+        "dob",
+        {}
+    )
+
+    print(
+        f"Name         : "
+        f"{name.get('title', '')} "
+        f"{name.get('first', '')} "
+        f"{name.get('last', '')}"
+    )
+
+    print(
+        f"Gender       : "
+        f"{user.get('gender', 'Unknown').title()}"
+    )
+
+    print(
+        f"Country      : "
+        f"{location.get('country', 'Unknown')}"
+    )
+
+    print(
+        f"Address      : "
+        f"{street.get('number', '')} "
+        f"{street.get('name', '')}"
+    )
+
+    print(
+        f"City         : "
+        f"{location.get('city', 'Unknown')}"
+    )
+
+    print(
+        f"State        : "
+        f"{location.get('state', 'Unknown')}"
+    )
+
+    print(
+        f"ZIP/Postcode : "
+        f"{location.get('postcode', 'Unknown')}"
+    )
+
+    print(
+        f"Email        : "
+        f"{user.get('email', 'Unknown')}"
+    )
+
+    print(
+        f"Phone        : "
+        f"{user.get('phone', 'Unknown')}"
+    )
+
+    print(
+        f"Mobile       : "
+        f"{user.get('cell', 'Unknown')}"
+    )
+
+    print(
+        f"Date of Birth: "
+        f"{dob.get('date', 'Unknown')[:10]}"
+    )
+
+    print(
+        f"Age          : "
+        f"{dob.get('age', 'Unknown')}"
+    )
+
+    print(
+        f"Username     : "
+        f"{user.get('login', {}).get('username', 'Unknown')}"
+    )
+
+    print(
+        f"Nationality  : "
+        f"{user.get('nat', 'Unknown')}"
+    )
+
+    picture = user.get(
+        "picture",
+        {}
+    )
+
+    print(
+        f"Picture      : "
+        f"{picture.get('large', 'Unavailable')}"
+    )
+
+    print(
+        "================================"
+    )
+
+    print(
+        f"{YELLOW}"
+        "⚠ SYNTHETIC TEST DATA"
+        f"{RESET}"
+    )
+
+    print(
+        "For software testing and development."
+    )
+
+
+def identity_generator():
+
+    while True:
+
+        clear_screen()
+        banner()
+
+        print(
+            f"{BOLD}{WHITE}"
+            "IDENTITY GENERATOR"
+            f"{RESET}\n"
+        )
+
+        print(
+            f"{CYAN}[1]{RESET} "
+            "Generate Random Identity"
+        )
+
+        print(
+            f"{CYAN}[2]{RESET} "
+            "Generate US Identity"
+        )
+
+        print(
+            f"{CYAN}[3]{RESET} "
+            "Generate Indian Identity"
+        )
+
+        print(
+            f"{CYAN}[4]{RESET} "
+            "Generate UK Identity"
+        )
+
+        print(
+            f"{CYAN}[5]{RESET} "
+            "Choose Nationality"
+        )
+
+        print(
+            f"{CYAN}[6]{RESET} "
+            "Choose Gender"
+        )
+
+        print(
+            f"{CYAN}[7]{RESET} "
+            "Generate Multiple Identities"
+        )
+
+        print(
+            f"{CYAN}[0]{RESET} "
+            "Back"
+        )
+
+        print()
+
+        choice = input(
+            f"{BOLD}Identity Generator > {RESET}"
+        ).strip()
+
+        nationality = None
+        gender = None
+        count = 1
+
+        if choice == "1":
+
+            pass
+
+        elif choice == "2":
+
+            nationality = "us"
+
+        elif choice == "3":
+
+            nationality = "in"
+
+        elif choice == "4":
+
+            nationality = "gb"
+
+        elif choice == "5":
+
+            clear_screen()
+            banner()
+
+            print(
+                f"{BOLD}SELECT NATIONALITY{RESET}\n"
+            )
+
+            for key, value in NATIONALITIES.items():
+
+                print(
+                    f"[{key}] {value[0]}"
+                )
+
+            print()
+
+            nat_choice = input(
+                "Select: "
+            ).strip()
+
+            if nat_choice not in NATIONALITIES:
+
+                error(
+                    "Invalid nationality."
+                )
+
+                pause()
+                continue
+
+            nationality = NATIONALITIES[
+                nat_choice
+            ][1]
+
+        elif choice == "6":
+
+            print()
+
+            print(
+                "[1] Male"
+            )
+
+            print(
+                "[2] Female"
+            )
+
+            print(
+                "[3] Random"
+            )
+
+            gender_choice = input(
+                "Select gender: "
+            ).strip()
+
+            if gender_choice == "1":
+
+                gender = "male"
+
+            elif gender_choice == "2":
+
+                gender = "female"
+
+            elif gender_choice == "3":
+
+                gender = None
+
+            else:
+
+                error(
+                    "Invalid gender."
+                )
+
+                pause()
+                continue
+
+        elif choice == "7":
+
+            try:
+
+                count = int(
+                    input(
+                        "How many identities (1-20): "
+                    ).strip()
+                )
+
+                if count < 1 or count > 20:
+
+                    error(
+                        "Choose between 1 and 20."
+                    )
+
+                    pause()
+                    continue
+
+            except ValueError:
+
+                error(
+                    "Please enter a number."
+                )
+
+                pause()
+                continue
+
+        elif choice == "0":
+
+            break
+
+        else:
+
+            error(
+                "Invalid option."
+            )
+
+            time.sleep(1)
+            continue
+
+        try:
+
+            info(
+                "Requesting synthetic identity data..."
+            )
+
+            data = generate_identity(
+                nationality=nationality,
+                gender=gender,
+                results=count
+            )
+
+            users = data.get(
+                "results",
+                []
+            )
+
+            if not users:
+
+                error(
+                    "API returned no users."
+                )
+
+                pause()
+                continue
+
+            clear_screen()
+            banner()
+
+            for index, user in enumerate(
+                users,
+                1
+            ):
+
+                print_identity(
+                    user,
+                    index if count > 1 else None
+                )
+
+            write_log(
+                f"Identity Generator: "
+                f"{len(users)} synthetic identities generated."
+            )
+
+        except Exception as exc:
+
+            error(
+                f"Identity API failed: {exc}"
+            )
+
+        pause()
+
+
+# ============================================================
+# CONNECTIVITY
 # ============================================================
 
 def connectivity_test():
@@ -1410,10 +1112,7 @@ def connectivity_test():
         start = time.perf_counter()
 
         with socket.create_connection(
-            (
-                host,
-                443
-            ),
+            (host, 443),
             timeout=5
         ):
 
@@ -1452,293 +1151,7 @@ def connectivity_test():
 
 
 # ============================================================
-# VERIFICATION LAB
-# ============================================================
-
-def generate_otp():
-
-    return (
-        f"{random.randint(0, 999999):06d}"
-    )
-
-
-def verification_lab():
-
-    current_otp = None
-    otp_created_at = None
-    expiry_seconds = 120
-
-    while True:
-
-        clear_screen()
-        banner()
-
-        print(
-            f"{BOLD}{WHITE}"
-            "VERIFICATION LAB"
-            f"{RESET}\n"
-        )
-
-        print(
-            "Local OTP generation and "
-            "verification testing."
-        )
-
-        print(
-            "No third-party OTP interception."
-        )
-
-        print()
-
-        print(
-            f"{CYAN}[1]{RESET} Generate Test OTP"
-        )
-
-        print(
-            f"{CYAN}[2]{RESET} Verify OTP"
-        )
-
-        print(
-            f"{CYAN}[3]{RESET} Generate New OTP"
-        )
-
-        print(
-            f"{CYAN}[4]{RESET} View OTP Session"
-        )
-
-        print(
-            f"{CYAN}[0]{RESET} Back"
-        )
-
-        print()
-
-        choice = input(
-            f"{BOLD}Verification Lab > {RESET}"
-        ).strip()
-
-        # ----------------------------------------------------
-        # Generate OTP
-        # ----------------------------------------------------
-
-        if choice in (
-            "1",
-            "3"
-        ):
-
-            current_otp = generate_otp()
-
-            otp_created_at = datetime.now()
-
-            expires_at = (
-                otp_created_at
-                + timedelta(
-                    seconds=expiry_seconds
-                )
-            )
-
-            clear_screen()
-            banner()
-
-            print(
-                f"{BOLD}{WHITE}"
-                "TEST OTP GENERATED"
-                f"{RESET}\n"
-            )
-
-            print(
-                f"OTP       : "
-                f"{GREEN}{current_otp}{RESET}"
-            )
-
-            print(
-                f"Created   : "
-                f"{otp_created_at.strftime('%H:%M:%S')}"
-            )
-
-            print(
-                f"Expires   : "
-                f"{expires_at.strftime('%H:%M:%S')}"
-            )
-
-            print(
-                f"Validity  : "
-                f"{expiry_seconds} seconds"
-            )
-
-            print()
-
-            success(
-                "Test OTP generated locally."
-            )
-
-            write_log(
-                "Verification Lab generated a local test OTP."
-            )
-
-            pause()
-
-        # ----------------------------------------------------
-        # Verify OTP
-        # ----------------------------------------------------
-
-        elif choice == "2":
-
-            clear_screen()
-            banner()
-
-            print(
-                f"{BOLD}{WHITE}"
-                "VERIFY TEST OTP"
-                f"{RESET}\n"
-            )
-
-            if not current_otp:
-
-                error(
-                    "No OTP has been generated."
-                )
-
-                pause()
-
-                continue
-
-            elapsed = (
-                datetime.now()
-                - otp_created_at
-            ).total_seconds()
-
-            if elapsed > expiry_seconds:
-
-                error(
-                    "OTP has expired."
-                )
-
-                current_otp = None
-                otp_created_at = None
-
-                pause()
-
-                continue
-
-            remaining = int(
-                expiry_seconds
-                - elapsed
-            )
-
-            entered = input(
-                "Enter OTP: "
-            ).strip()
-
-            if entered == current_otp:
-
-                success(
-                    "OTP verification successful."
-                )
-
-                print(
-                    f"Remaining validity: "
-                    f"{remaining} seconds"
-                )
-
-                write_log(
-                    "Verification Lab OTP verification successful."
-                )
-
-                current_otp = None
-                otp_created_at = None
-
-            else:
-
-                error(
-                    "Invalid OTP."
-                )
-
-                print(
-                    f"Remaining validity: "
-                    f"{remaining} seconds"
-                )
-
-                write_log(
-                    "Verification Lab rejected an invalid OTP."
-                )
-
-            pause()
-
-        # ----------------------------------------------------
-        # View Session
-        # ----------------------------------------------------
-
-        elif choice == "4":
-
-            clear_screen()
-            banner()
-
-            print(
-                f"{BOLD}{WHITE}"
-                "OTP SESSION"
-                f"{RESET}\n"
-            )
-
-            if not current_otp:
-
-                print(
-                    "Status : No active OTP"
-                )
-
-            else:
-
-                elapsed = (
-                    datetime.now()
-                    - otp_created_at
-                ).total_seconds()
-
-                if elapsed > expiry_seconds:
-
-                    print(
-                        "Status : Expired"
-                    )
-
-                    current_otp = None
-                    otp_created_at = None
-
-                else:
-
-                    remaining = int(
-                        expiry_seconds
-                        - elapsed
-                    )
-
-                    print(
-                        "Status : Active"
-                    )
-
-                    print(
-                        f"Created : "
-                        f"{otp_created_at.strftime('%H:%M:%S')}"
-                    )
-
-                    print(
-                        f"Expires : "
-                        f"{remaining} seconds remaining"
-                    )
-
-            pause()
-
-        elif choice == "0":
-
-            break
-
-        else:
-
-            error(
-                "Invalid option."
-            )
-
-            time.sleep(1)
-
-
-# ============================================================
-# LOG VIEWER
+# LOGS
 # ============================================================
 
 def show_logs():
@@ -1761,7 +1174,6 @@ def show_logs():
         )
 
         pause()
-
         return
 
     try:
@@ -1807,7 +1219,7 @@ def about():
     print(
         "SignalLab is a lightweight "
         "network, domain, mail and "
-        "OSINT toolkit."
+        "developer testing toolkit."
     )
 
     print()
@@ -1833,7 +1245,7 @@ def about():
     )
 
     print(
-        "  • Verification Lab"
+        "  • Identity Generator"
     )
 
     print(
@@ -1861,8 +1273,8 @@ def about():
     print()
 
     print(
-        "Verification Lab generates "
-        "local test OTPs for software testing."
+        "Identity Generator uses "
+        "synthetic data for testing."
     )
 
     pause()
@@ -1907,7 +1319,7 @@ def main_menu():
 
         print(
             f"{CYAN}[5]{RESET} "
-            "Verification Lab"
+            "Identity Generator"
         )
 
         print(
@@ -1942,7 +1354,20 @@ def main_menu():
 
         elif choice == "2":
 
-            disposable_inbox()
+            # Existing Disposable Inbox
+            # from your previous version.
+            print(
+                "\nDisposable Inbox module "
+                "is available in your previous build."
+            )
+
+            print(
+                "If you want it merged with this "
+                "version, keep your existing "
+                "Disposable Inbox functions."
+            )
+
+            pause()
 
         elif choice == "3":
 
@@ -1954,7 +1379,7 @@ def main_menu():
 
         elif choice == "5":
 
-            verification_lab()
+            identity_generator()
 
         elif choice == "6":
 
