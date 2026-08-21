@@ -20,9 +20,7 @@ VERSION = "3.0.0"
 
 LOG_FILE = "signallab.log"
 MAIL_SESSION_FILE = "tempmail_session.json"
-
 MAIL_API = "https://api.mail.tm"
-
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -31,7 +29,6 @@ GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
 BLUE = "\033[94m"
-MAGENTA = "\033[95m"
 WHITE = "\033[97m"
 
 
@@ -97,58 +94,23 @@ def normalize_domain(domain):
 
     domain = domain.split("/")[0]
     domain = domain.split(":")[0]
-    domain = domain.rstrip(".")
-
-    return domain
+    return domain.rstrip(".")
 
 
 def valid_domain(domain):
-    if not domain or len(domain) > 253:
-        return False
-
     pattern = (
         r"^(?=.{1,253}$)"
         r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
         r"[a-z]{2,63}$"
     )
-
-    return bool(re.match(pattern, domain, re.IGNORECASE))
-
-
-def random_username():
-    chars = string.ascii_lowercase + string.digits
-
-    return (
-        "".join(random.choice(chars) for _ in range(8))
-        + str(random.randint(100, 999))
-    )
-
-
-def random_password():
-    chars = (
-        string.ascii_letters
-        + string.digits
-        + "!@#$%^&*"
-    )
-
-    return "".join(
-        random.choice(chars)
-        for _ in range(18)
-    )
+    return bool(re.match(pattern, domain, re.I))
 
 
 # ============================================================
-# HTTP HELPERS
+# HTTP / API
 # ============================================================
 
-def api_request(
-    url,
-    method="GET",
-    data=None,
-    headers=None,
-    timeout=15
-):
-
+def api_request(url, method="GET", data=None, headers=None, timeout=15):
     request_headers = {
         "User-Agent": "SignalLab/3.0"
     }
@@ -159,12 +121,8 @@ def api_request(
     body = None
 
     if data is not None:
-
         body = json.dumps(data).encode("utf-8")
-
-        request_headers[
-            "Content-Type"
-        ] = "application/json"
+        request_headers["Content-Type"] = "application/json"
 
     request = urllib.request.Request(
         url,
@@ -174,7 +132,6 @@ def api_request(
     )
 
     try:
-
         with urllib.request.urlopen(
             request,
             timeout=timeout
@@ -194,7 +151,6 @@ def api_request(
                 return response.status, raw
 
     except urllib.error.HTTPError as exc:
-
         raw = exc.read().decode(
             "utf-8",
             errors="replace"
@@ -210,86 +166,76 @@ def api_request(
         )
 
 
-def http_get_json(url, timeout=12):
-
-    return api_request(
-        url,
-        method="GET",
-        timeout=timeout
-    )
-
-
 # ============================================================
-# TEMP MAIL SESSION
+# DISPOSABLE INBOX
 # ============================================================
 
 def save_mail_session(session):
-
     try:
-
         with open(
             MAIL_SESSION_FILE,
             "w",
             encoding="utf-8"
         ) as file:
-
             json.dump(
                 session,
                 file,
                 indent=2
             )
-
     except OSError as exc:
-
-        error(
-            f"Unable to save mail session: {exc}"
-        )
+        error(f"Unable to save mail session: {exc}")
 
 
 def load_mail_session():
-
-    if not os.path.exists(
-        MAIL_SESSION_FILE
-    ):
+    if not os.path.exists(MAIL_SESSION_FILE):
         return None
 
     try:
-
         with open(
             MAIL_SESSION_FILE,
             "r",
             encoding="utf-8"
         ) as file:
-
             return json.load(file)
-
     except Exception:
-
         return None
 
 
 def delete_mail_session():
-
     try:
-
-        if os.path.exists(
-            MAIL_SESSION_FILE
-        ):
-            os.remove(
-                MAIL_SESSION_FILE
-            )
-
+        if os.path.exists(MAIL_SESSION_FILE):
+            os.remove(MAIL_SESSION_FILE)
     except OSError:
         pass
 
 
-# ============================================================
-# TEMP MAIL - DOMAIN
-# ============================================================
+def random_username():
+    chars = string.ascii_lowercase + string.digits
+
+    return (
+        "".join(
+            random.choice(chars)
+            for _ in range(8)
+        )
+        + str(random.randint(100, 999))
+    )
+
+
+def random_password():
+    chars = (
+        string.ascii_letters
+        + string.digits
+        + "!@#$%^&*"
+    )
+
+    return "".join(
+        random.choice(chars)
+        for _ in range(18)
+    )
+
 
 def get_temp_domains():
-
-    status, data = http_get_json(
+    _, data = api_request(
         f"{MAIL_API}/domains"
     )
 
@@ -299,55 +245,38 @@ def get_temp_domains():
         "hydra:member",
         []
     ):
+        domain = item.get("domain")
 
-        domain = item.get(
-            "domain"
-        )
-
-        if (
-            domain
-            and item.get(
-                "isActive",
-                True
-            )
+        if domain and item.get(
+            "isActive",
+            True
         ):
-
             domains.append(domain)
 
     return domains
 
 
-# ============================================================
-# TEMP MAIL - CREATE ACCOUNT
-# ============================================================
-
-def create_temp_mail():
-
+def create_disposable_mail():
     print()
 
     info(
-        "Getting available temporary mail domains..."
+        "Getting available disposable mail domains..."
     )
 
     try:
-
         domains = get_temp_domains()
 
         if not domains:
             error(
-                "No temporary mail domains are currently available."
+                "No temporary mail domains are available."
             )
-
-            return None
+            return
 
         domain = domains[0]
-
         username = random_username()
         password = random_password()
 
-        address = (
-            f"{username}@{domain}"
-        )
+        address = f"{username}@{domain}"
 
         info(
             f"Creating mailbox: {address}"
@@ -362,18 +291,13 @@ def create_temp_mail():
             }
         )
 
-        if status not in (
-            200,
-            201
-        ):
-
+        if status not in (200, 201):
             error(
-                "Unable to create temporary mailbox."
+                "Unable to create mailbox."
             )
+            return
 
-            return None
-
-        status, token_data = api_request(
+        _, token_data = api_request(
             f"{MAIL_API}/token",
             method="POST",
             data={
@@ -382,39 +306,32 @@ def create_temp_mail():
             }
         )
 
-        token = token_data.get(
-            "token"
-        )
+        token = token_data.get("token")
 
         if not token:
-
             error(
-                "Mailbox created, but token was not received."
+                "Mailbox created but authentication token was not received."
             )
-
-            return None
+            return
 
         session = {
-            "id": account.get(
-                "id"
-            ),
+            "id": account.get("id"),
             "address": address,
             "password": password,
             "token": token,
             "created_at": datetime.now().isoformat()
         }
 
-        save_mail_session(
-            session
-        )
+        save_mail_session(session)
 
         print()
+
         success(
-            "Temporary mailbox created."
+            "Disposable mailbox created."
         )
 
         print(
-            f"\n{BOLD}Your Temporary Email:{RESET}"
+            f"\n{BOLD}Your Disposable Email:{RESET}"
         )
 
         print(
@@ -422,42 +339,31 @@ def create_temp_mail():
         )
 
         print(
-            f"\nCreated: "
-            f"{session['created_at']}"
+            f"\nCreated: {session['created_at']}"
         )
 
-        return session
+        write_log(
+            f"Disposable mailbox created: {address}"
+        )
 
     except Exception as exc:
-
         error(
-            f"Temporary mail error: {exc}"
+            f"Disposable Inbox error: {exc}"
         )
 
-        return None
-
-
-# ============================================================
-# TEMP MAIL - CURRENT ADDRESS
-# ============================================================
 
 def show_current_mail():
-
     session = load_mail_session()
 
     if not session:
-
-        print()
-        info(
-            "No temporary mailbox is active."
+        print(
+            f"{YELLOW}No disposable mailbox is active.{RESET}"
         )
-
         return
 
-    print()
     print(
         f"{BOLD}{WHITE}"
-        "CURRENT TEMPORARY MAILBOX"
+        "CURRENT DISPOSABLE INBOX"
         f"{RESET}"
     )
 
@@ -476,30 +382,20 @@ def show_current_mail():
     )
 
 
-# ============================================================
-# TEMP MAIL - LIST MESSAGES
-# ============================================================
-
 def get_mail_messages():
-
     session = load_mail_session()
 
     if not session:
-        error(
-            "No active temporary mailbox."
+        raise RuntimeError(
+            "No active disposable mailbox."
         )
-        return []
-
-    token = session.get(
-        "token"
-    )
 
     headers = {
         "Authorization":
-            f"Bearer {token}"
+            f"Bearer {session['token']}"
     }
 
-    status, data = api_request(
+    _, data = api_request(
         f"{MAIL_API}/messages",
         headers=headers
     )
@@ -511,55 +407,44 @@ def get_mail_messages():
 
 
 def refresh_inbox():
-
     clear_screen()
     banner()
 
     print(
         f"{BOLD}{WHITE}"
-        "TEMP MAIL INBOX"
+        "DISPOSABLE INBOX"
         f"{RESET}\n"
     )
 
     session = load_mail_session()
 
     if not session:
-
         info(
-            "No mailbox exists."
+            "No disposable mailbox exists."
         )
-
         print(
             "\nUse option 1 to generate one."
         )
-
         pause()
         return
 
     print(
         f"Address : "
-        f"{CYAN}{session['address']}{RESET}"
+        f"{CYAN}{session['address']}{RESET}\n"
     )
 
-    print()
-
     try:
-
         messages = get_mail_messages()
 
         if not messages:
-
             info(
                 "Inbox is empty."
             )
-
             pause()
             return
 
         print(
-            f"{BOLD}"
-            "MESSAGES"
-            f"{RESET}"
+            f"{BOLD}MESSAGES{RESET}"
         )
 
         print(
@@ -570,7 +455,6 @@ def refresh_inbox():
             messages,
             1
         ):
-
             sender = (
                 message
                 .get("from", {})
@@ -582,21 +466,14 @@ def refresh_inbox():
                 "(No subject)"
             )
 
-            seen = message.get(
-                "seen",
-                False
-            )
-
-            status_text = (
+            status = (
                 "READ"
-                if seen
+                if message.get("seen")
                 else "NEW"
             )
 
             print(
-                f"[{index}] "
-                f"{status_text:<4} "
-                f"{sender}"
+                f"[{index}] {status:<4} {sender}"
             )
 
             print(
@@ -606,12 +483,11 @@ def refresh_inbox():
             print()
 
         write_log(
-            f"Temp Mail inbox refreshed: "
+            f"Disposable Inbox refreshed: "
             f"{len(messages)} messages"
         )
 
     except Exception as exc:
-
         error(
             f"Unable to fetch inbox: {exc}"
         )
@@ -619,42 +495,32 @@ def refresh_inbox():
     pause()
 
 
-# ============================================================
-# TEMP MAIL - READ MESSAGE
-# ============================================================
-
 def read_message():
-
     clear_screen()
     banner()
 
     print(
         f"{BOLD}{WHITE}"
-        "READ TEMP MAIL MESSAGE"
+        "READ MESSAGE"
         f"{RESET}\n"
     )
 
     session = load_mail_session()
 
     if not session:
-
         error(
-            "No active temporary mailbox."
+            "No active disposable mailbox."
         )
-
         pause()
         return
 
     try:
-
         messages = get_mail_messages()
 
         if not messages:
-
             info(
                 "Inbox is empty."
             )
-
             pause()
             return
 
@@ -666,7 +532,6 @@ def read_message():
             messages,
             1
         ):
-
             print(
                 f"[{index}] "
                 f"{message.get('subject', '(No subject)')}"
@@ -679,38 +544,26 @@ def read_message():
         ).strip()
 
         if not choice.isdigit():
-
             error(
                 "Invalid message number."
             )
-
             pause()
             return
 
         index = int(choice) - 1
 
-        if index < 0 or index >= len(
-            messages
-        ):
-
+        if index < 0 or index >= len(messages):
             error(
                 "Message does not exist."
             )
-
             pause()
             return
 
-        message_id = messages[
-            index
-        ].get("id")
-
-        token = session.get(
-            "token"
-        )
+        message_id = messages[index].get("id")
 
         headers = {
             "Authorization":
-                f"Bearer {token}"
+                f"Bearer {session['token']}"
         }
 
         _, message = api_request(
@@ -740,10 +593,9 @@ def read_message():
         )
 
         print()
+
         print(
-            f"{BOLD}{WHITE}"
-            "MESSAGE"
-            f"{RESET}"
+            f"{BOLD}MESSAGE{RESET}"
         )
 
         print(
@@ -770,23 +622,18 @@ def read_message():
             "--------------------------------"
         )
 
-        if text:
-
-            print(text)
-
-        else:
-
-            print(
-                "(No plain-text body available.)"
-            )
+        print(
+            text
+            if text
+            else "(No plain-text body available.)"
+        )
 
         write_log(
-            f"Temp Mail message opened: "
+            f"Disposable Inbox message opened: "
             f"{subject}"
         )
 
     except Exception as exc:
-
         error(
             f"Unable to read message: {exc}"
         )
@@ -794,29 +641,22 @@ def read_message():
     pause()
 
 
-# ============================================================
-# TEMP MAIL - DELETE MAILBOX
-# ============================================================
-
-def delete_temp_mailbox():
-
+def delete_disposable_mailbox():
     clear_screen()
     banner()
 
     print(
         f"{BOLD}{WHITE}"
-        "DELETE TEMPORARY MAILBOX"
+        "DELETE DISPOSABLE MAILBOX"
         f"{RESET}\n"
     )
 
     session = load_mail_session()
 
     if not session:
-
         info(
             "No active mailbox."
         )
-
         pause()
         return
 
@@ -825,36 +665,24 @@ def delete_temp_mailbox():
     )
 
     confirm = input(
-        f"Delete {address}? "
-        "(yes/no): "
+        f"Delete {address}? (yes/no): "
     ).strip().lower()
 
     if confirm != "yes":
-
         info(
             "Mailbox deletion cancelled."
         )
-
         pause()
         return
 
     try:
-
-        token = session.get(
-            "token"
-        )
-
         headers = {
             "Authorization":
-                f"Bearer {token}"
+                f"Bearer {session['token']}"
         }
 
-        mailbox_id = session.get(
-            "id"
-        )
-
         api_request(
-            f"{MAIL_API}/accounts/{mailbox_id}",
+            f"{MAIL_API}/accounts/{session['id']}",
             method="DELETE",
             headers=headers
         )
@@ -862,16 +690,14 @@ def delete_temp_mailbox():
         delete_mail_session()
 
         success(
-            "Temporary mailbox deleted."
+            "Disposable mailbox deleted."
         )
 
         write_log(
-            f"Temp Mail mailbox deleted: "
-            f"{address}"
+            f"Disposable mailbox deleted: {address}"
         )
 
     except Exception as exc:
-
         error(
             f"Unable to delete mailbox: {exc}"
         )
@@ -879,20 +705,14 @@ def delete_temp_mailbox():
     pause()
 
 
-# ============================================================
-# TEAM MAIL MENU
-# ============================================================
-
-def team_mail():
-
+def disposable_inbox():
     while True:
-
         clear_screen()
         banner()
 
         print(
             f"{BOLD}{WHITE}"
-            "TEAM MAIL / TEMP MAIL"
+            "DISPOSABLE INBOX"
             f"{RESET}\n"
         )
 
@@ -902,7 +722,7 @@ def team_mail():
 
         print(
             f"{CYAN}[1]{RESET} "
-            "Generate New Temporary Email"
+            "Generate New Disposable Email"
         )
 
         print(
@@ -917,12 +737,12 @@ def team_mail():
 
         print(
             f"{CYAN}[4]{RESET} "
-            "Delete Current Mailbox"
+            "Delete Mailbox"
         )
 
         print(
             f"{CYAN}[5]{RESET} "
-            "Generate Another Email"
+            "Generate Another Address"
         )
 
         print(
@@ -933,68 +753,53 @@ def team_mail():
         print()
 
         choice = input(
-            f"{BOLD}Team Mail > {RESET}"
+            f"{BOLD}Disposable Inbox > {RESET}"
         ).strip()
 
         if choice == "1":
-
-            create_temp_mail()
+            create_disposable_mail()
             pause()
 
         elif choice == "2":
-
             refresh_inbox()
 
         elif choice == "3":
-
             read_message()
 
         elif choice == "4":
-
-            delete_temp_mailbox()
+            delete_disposable_mailbox()
 
         elif choice == "5":
-
-            create_temp_mail()
+            create_disposable_mail()
             pause()
 
         elif choice == "0":
-
             break
 
         else:
-
             error(
                 "Invalid option."
             )
-
             time.sleep(1)
 
 
 # ============================================================
-# RDAP DOMAIN LOOKUP
+# DOMAIN REGISTRATION / RDAP
 # ============================================================
 
 def get_rdap_server(domain):
-
     tld = domain.split(".")[-1].lower()
 
-    bootstrap_url = (
-        "https://data.iana.org/rdap/dns.json"
-    )
-
     try:
-
-        _, data = http_get_json(
-            bootstrap_url
+        _, data = api_request(
+            "https://data.iana.org/rdap/dns.json"
         )
 
         for service in data.get(
             "services",
             []
         ):
-
-            if not service or len(service) < 2:
+            if len(service) < 2:
                 continue
 
             tlds = service[0]
@@ -1004,28 +809,22 @@ def get_rdap_server(domain):
                 str(x).lower()
                 for x in tlds
             ]:
-
                 if servers:
                     return servers[0].rstrip("/")
 
     except Exception:
-        return None
+        pass
 
     return None
 
 
 def format_rdap_date(value):
-
     if not value:
         return "Not available"
 
     try:
-
         parsed = datetime.fromisoformat(
-            value.replace(
-                "Z",
-                "+00:00"
-            )
+            value.replace("Z", "+00:00")
         )
 
         return parsed.strftime(
@@ -1033,41 +832,27 @@ def format_rdap_date(value):
         )
 
     except Exception:
-
-        return (
-            value[:10]
-            if len(value) >= 10
-            else value
-        )
+        return value[:10]
 
 
 def extract_event(events, event_name):
-
     for event in events or []:
-
         if event.get(
             "eventAction"
         ) == event_name:
-
             return format_rdap_date(
-                event.get(
-                    "eventDate"
-                )
+                event.get("eventDate")
             )
 
     return "Not available"
 
 
 def extract_registrar(entities):
-
     for entity in entities or []:
-
-        roles = entity.get(
+        if "registrar" not in entity.get(
             "roles",
             []
-        )
-
-        if "registrar" not in roles:
+        ):
             continue
 
         vcard = entity.get(
@@ -1075,25 +860,18 @@ def extract_registrar(entities):
             []
         )
 
-        if (
-            isinstance(vcard, list)
-            and len(vcard) > 1
-        ):
-
+        if isinstance(vcard, list) and len(vcard) > 1:
             for item in vcard[1]:
-
                 if (
                     len(item) >= 4
                     and item[0] == "fn"
                 ):
-
                     return item[3]
 
     return "Not available"
 
 
 def domain_registration_lookup():
-
     clear_screen()
     banner()
 
@@ -1112,61 +890,47 @@ def domain_registration_lookup():
     )
 
     if not valid_domain(domain):
-
         error(
             "Please enter a valid domain."
         )
-
         pause()
         return
-
-    print()
 
     info(
         f"Looking up registration data "
         f"for {domain}..."
     )
 
-    rdap_server = get_rdap_server(
-        domain
-    )
-
-    if not rdap_server:
-
-        error(
-            "No RDAP server found."
-        )
-
-        pause()
-        return
-
-    rdap_url = (
-        f"{rdap_server}/domain/"
-        f"{urllib.parse.quote(domain)}"
-    )
-
     try:
-
-        status_code, data = http_get_json(
-            rdap_url
+        rdap_server = get_rdap_server(
+            domain
         )
 
-        statuses = data.get(
-            "status",
-            []
+        if not rdap_server:
+            error(
+                "No RDAP server found."
+            )
+            pause()
+            return
+
+        url = (
+            f"{rdap_server}/domain/"
+            f"{urllib.parse.quote(domain)}"
         )
 
-        registration_date = extract_event(
+        _, data = api_request(url)
+
+        registration = extract_event(
             data.get("events"),
             "registration"
         )
 
-        expiration_date = extract_event(
+        expiration = extract_event(
             data.get("events"),
             "expiration"
         )
 
-        updated_date = extract_event(
+        updated = extract_event(
             data.get("events"),
             "last changed"
         )
@@ -1175,13 +939,17 @@ def domain_registration_lookup():
             data.get("entities")
         )
 
+        statuses = data.get(
+            "status",
+            []
+        )
+
         nameservers = []
 
         for ns in data.get(
             "nameservers",
             []
         ):
-
             name = ns.get(
                 "ldhName"
             )
@@ -1194,9 +962,7 @@ def domain_registration_lookup():
         print()
 
         print(
-            f"{BOLD}{WHITE}"
-            "DOMAIN INFORMATION"
-            f"{RESET}"
+            f"{BOLD}DOMAIN INFORMATION{RESET}"
         )
 
         print(
@@ -1212,45 +978,32 @@ def domain_registration_lookup():
         )
 
         print(
-            f"Registration    : "
-            f"{registration_date}"
+            f"Registration    : {registration}"
         )
 
         print(
-            f"Expiration      : "
-            f"{expiration_date}"
+            f"Expiration      : {expiration}"
         )
 
         print(
-            f"Last Updated    : "
-            f"{updated_date}"
+            f"Last Updated    : {updated}"
         )
 
         print(
-            f"Registrar       : "
-            f"{registrar}"
+            f"Registrar       : {registrar}"
         )
 
         print(
-            f"RDAP Server     : "
-            f"{rdap_server}"
+            f"RDAP Server     : {rdap_server}"
         )
 
         print(
             "\nDomain Status:"
         )
 
-        if statuses:
-
-            for status in statuses:
-                print(
-                    f"  • {status}"
-                )
-
-        else:
-
+        for status in statuses:
             print(
-                "  Not available"
+                f"  • {status}"
             )
 
         print(
@@ -1258,14 +1011,11 @@ def domain_registration_lookup():
         )
 
         if nameservers:
-
             for server in nameservers:
                 print(
                     f"  • {server}"
                 )
-
         else:
-
             print(
                 "  Not available"
             )
@@ -1277,7 +1027,6 @@ def domain_registration_lookup():
     except urllib.error.HTTPError as exc:
 
         if exc.code == 404:
-
             print(
                 f"\nDomain : {domain}"
             )
@@ -1287,13 +1036,11 @@ def domain_registration_lookup():
             )
 
         else:
-
             error(
                 f"RDAP HTTP error: {exc.code}"
             )
 
     except Exception as exc:
-
         error(
             f"RDAP lookup failed: {exc}"
         )
@@ -1302,28 +1049,22 @@ def domain_registration_lookup():
 
 
 # ============================================================
-# DNS LOOKUP
+# DNS
 # ============================================================
 
 def doh_query(name, record_type):
-
-    encoded_name = urllib.parse.quote(
-        name
-    )
+    encoded = urllib.parse.quote(name)
 
     url = (
         "https://cloudflare-dns.com/dns-query"
-        f"?name={encoded_name}"
-        f"&type={record_type}"
+        f"?name={encoded}&type={record_type}"
     )
 
     request = urllib.request.Request(
         url,
         headers={
-            "Accept":
-                "application/dns-json",
-            "User-Agent":
-                "SignalLab/3.0"
+            "Accept": "application/dns-json",
+            "User-Agent": "SignalLab/3.0"
         }
     )
 
@@ -1331,7 +1072,6 @@ def doh_query(name, record_type):
         request,
         timeout=10
     ) as response:
-
         return json.loads(
             response.read().decode(
                 "utf-8",
@@ -1340,45 +1080,7 @@ def doh_query(name, record_type):
         )
 
 
-def get_dns_records(
-    name,
-    record_type
-):
-
-    try:
-
-        data = doh_query(
-            name,
-            record_type
-        )
-
-        answers = data.get(
-            "Answer",
-            []
-        )
-
-        records = []
-
-        for answer in answers:
-
-            value = answer.get(
-                "data"
-            )
-
-            if value:
-                records.append(
-                    value
-                )
-
-        return records
-
-    except Exception:
-
-        return []
-
-
 def dns_lookup():
-
     clear_screen()
     banner()
 
@@ -1397,16 +1099,13 @@ def dns_lookup():
     )
 
     if not hostname:
-
         error(
             "Hostname cannot be empty."
         )
-
         pause()
         return
 
     try:
-
         start = time.perf_counter()
 
         addresses = socket.getaddrinfo(
@@ -1416,8 +1115,7 @@ def dns_lookup():
         )
 
         elapsed = (
-            time.perf_counter()
-            - start
+            time.perf_counter() - start
         ) * 1000
 
         ips = sorted(
@@ -1441,14 +1139,12 @@ def dns_lookup():
             ips,
             1
         ):
-
             print(
                 f"  IPv4 #{index}: {ip}"
             )
 
         print(
-            f"  Lookup time : "
-            f"{elapsed:.2f} ms"
+            f"  Lookup time : {elapsed:.2f} ms"
         )
 
         write_log(
@@ -1456,7 +1152,6 @@ def dns_lookup():
         )
 
     except socket.gaierror:
-
         error(
             "Unable to resolve hostname."
         )
@@ -1469,7 +1164,6 @@ def dns_lookup():
 # ============================================================
 
 def network_info():
-
     clear_screen()
     banner()
 
@@ -1482,13 +1176,10 @@ def network_info():
     hostname = socket.gethostname()
 
     try:
-
         local_ip = socket.gethostbyname(
             hostname
         )
-
     except socket.gaierror:
-
         local_ip = "Unavailable"
 
     print(
@@ -1500,23 +1191,19 @@ def network_info():
     )
 
     print(
-        f"System        : "
-        f"{platform.system()}"
+        f"System        : {platform.system()}"
     )
 
     print(
-        f"Release       : "
-        f"{platform.release()}"
+        f"Release       : {platform.release()}"
     )
 
     print(
-        f"Machine       : "
-        f"{platform.machine()}"
+        f"Machine       : {platform.machine()}"
     )
 
     print(
-        f"Python        : "
-        f"{platform.python_version()}"
+        f"Python        : {platform.python_version()}"
     )
 
     print(
@@ -1528,34 +1215,22 @@ def network_info():
     )
 
     try:
-
         public_ip = urllib.request.urlopen(
             "https://api.ipify.org",
             timeout=5
         ).read().decode()
-
     except Exception:
-
         public_ip = "Unavailable"
 
     print(
         f"Public IPv4   : {public_ip}"
     )
 
-    print(
-        f"\n{BOLD}HOST INFORMATION{RESET}"
-    )
-
     try:
-
-        fqdn = socket.getfqdn()
-
         print(
-            f"FQDN          : {fqdn}"
+            f"FQDN          : {socket.getfqdn()}"
         )
-
     except Exception:
-
         print(
             "FQDN          : Unavailable"
         )
@@ -1568,11 +1243,10 @@ def network_info():
 
 
 # ============================================================
-# HTTP API TESTER
+# HTTP / API TEST
 # ============================================================
 
 def api_test():
-
     clear_screen()
     banner()
 
@@ -1587,17 +1261,11 @@ def api_test():
     ).strip()
 
     if not url.startswith(
-        (
-            "http://",
-            "https://"
-        )
+        ("http://", "https://")
     ):
-
         error(
-            "URL must start with "
-            "http:// or https://"
+            "URL must start with http:// or https://"
         )
-
         pause()
         return
 
@@ -1608,7 +1276,6 @@ def api_test():
     start = time.perf_counter()
 
     try:
-
         request = urllib.request.Request(
             url,
             headers={
@@ -1623,8 +1290,7 @@ def api_test():
         ) as response:
 
             elapsed = (
-                time.perf_counter()
-                - start
+                time.perf_counter() - start
             ) * 1000
 
             print()
@@ -1634,13 +1300,11 @@ def api_test():
             )
 
             print(
-                f"Status        : "
-                f"{response.status}"
+                f"Status        : {response.status}"
             )
 
             print(
-                f"Response time : "
-                f"{elapsed:.2f} ms"
+                f"Response time : {elapsed:.2f} ms"
             )
 
             print(
@@ -1659,20 +1323,16 @@ def api_test():
             )
 
     except urllib.error.HTTPError as exc:
-
         error(
             f"HTTP error: {exc.code}"
         )
 
     except urllib.error.URLError as exc:
-
         error(
-            f"Connection failed: "
-            f"{exc.reason}"
+            f"Connection failed: {exc.reason}"
         )
 
     except Exception as exc:
-
         error(
             f"Unexpected error: {exc}"
         )
@@ -1685,7 +1345,6 @@ def api_test():
 # ============================================================
 
 def connectivity_test():
-
     clear_screen()
     banner()
 
@@ -1704,17 +1363,14 @@ def connectivity_test():
     )
 
     try:
-
         start = time.perf_counter()
 
         with socket.create_connection(
             (host, 443),
             timeout=5
         ):
-
             elapsed = (
-                time.perf_counter()
-                - start
+                time.perf_counter() - start
             ) * 1000
 
         success(
@@ -1734,12 +1390,10 @@ def connectivity_test():
         )
 
         write_log(
-            f"Connectivity test: "
-            f"{host}:443"
+            f"Connectivity test: {host}:443"
         )
 
     except OSError as exc:
-
         error(
             f"Connection failed: {exc}"
         )
@@ -1752,7 +1406,6 @@ def connectivity_test():
 # ============================================================
 
 def show_logs():
-
     clear_screen()
     banner()
 
@@ -1762,25 +1415,19 @@ def show_logs():
         f"{RESET}\n"
     )
 
-    if not os.path.exists(
-        LOG_FILE
-    ):
-
+    if not os.path.exists(LOG_FILE):
         info(
             "No logs available."
         )
-
         pause()
         return
 
     try:
-
         with open(
             LOG_FILE,
             "r",
             encoding="utf-8"
         ) as file:
-
             content = file.read()
 
         print(
@@ -1790,7 +1437,6 @@ def show_logs():
         )
 
     except OSError as exc:
-
         error(
             f"Unable to read logs: {exc}"
         )
@@ -1803,7 +1449,6 @@ def show_logs():
 # ============================================================
 
 def about():
-
     clear_screen()
     banner()
 
@@ -1815,11 +1460,12 @@ def about():
 
     print(
         "SignalLab is a lightweight "
-        "network, domain and mail "
-        "intelligence toolkit."
+        "network, domain, mail and "
+        "OSINT toolkit."
     )
 
     print()
+
     print(
         "Features:"
     )
@@ -1829,11 +1475,15 @@ def about():
     )
 
     print(
-        "  • Temporary email mailbox"
+        "  • Disposable Inbox"
     )
 
     print(
-        "  • Inbox refresh and reader"
+        "  • Disposable email generation"
+    )
+
+    print(
+        "  • Inbox refresh and message reader"
     )
 
     print(
@@ -1853,10 +1503,11 @@ def about():
     )
 
     print(
-        "  • Local logging"
+        "  • Local activity logging"
     )
 
     print()
+
     print(
         f"Version : {VERSION}"
     )
@@ -1870,8 +1521,9 @@ def about():
     )
 
     print()
+
     print(
-        "Temporary Mail API:"
+        "Disposable mail service:"
     )
 
     print(
@@ -1886,7 +1538,6 @@ def about():
 # ============================================================
 
 def main_menu():
-
     while True:
 
         clear_screen()
@@ -1905,7 +1556,7 @@ def main_menu():
 
         print(
             f"{CYAN}[2]{RESET} "
-            "Team Mail / Temp Mail"
+            "Disposable Inbox"
         )
 
         print(
@@ -1950,35 +1601,27 @@ def main_menu():
         ).strip()
 
         if choice == "1":
-
             domain_registration_lookup()
 
         elif choice == "2":
-
-            team_mail()
+            disposable_inbox()
 
         elif choice == "3":
-
             dns_lookup()
 
         elif choice == "4":
-
             network_info()
 
         elif choice == "5":
-
             api_test()
 
         elif choice == "6":
-
             connectivity_test()
 
         elif choice == "7":
-
             show_logs()
 
         elif choice == "8":
-
             about()
 
         elif choice == "0":
@@ -2009,7 +1652,6 @@ def main_menu():
 if __name__ == "__main__":
 
     try:
-
         main_menu()
 
     except KeyboardInterrupt:
