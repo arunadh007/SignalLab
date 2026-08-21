@@ -3,7 +3,6 @@
 import json
 import os
 import platform
-import random
 import re
 import socket
 import sys
@@ -11,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import html
 from datetime import datetime
 
 
@@ -18,7 +18,8 @@ APP_NAME = "SignalLab"
 VERSION = "4.0.0"
 LOG_FILE = "signallab.log"
 
-API_URL = "https://randomuser.me/api/"
+RANDOM_USER_API = "https://randomuser.me/api/"
+TEMP_MAIL_API = "https://www.1secmail.com/api/v1/"
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -56,7 +57,9 @@ def banner():
 
 
 def pause():
-    input(f"\n{YELLOW}Press Enter to continue...{RESET}")
+    input(
+        f"\n{YELLOW}Press Enter to continue...{RESET}"
+    )
 
 
 def write_log(message):
@@ -70,7 +73,6 @@ def write_log(message):
             "a",
             encoding="utf-8"
         ) as file:
-
             file.write(
                 f"[{timestamp}] {message}\n"
             )
@@ -83,7 +85,6 @@ def success(message):
     print(
         f"{GREEN}[+] {message}{RESET}"
     )
-
     write_log(message)
 
 
@@ -108,12 +109,10 @@ def info(message):
 # ============================================================
 
 def api_get(url, timeout=20):
-
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent":
-            "SignalLab/4.0"
+            "User-Agent": "SignalLab/4.0"
         }
     )
 
@@ -151,7 +150,7 @@ def api_get(url, timeout=20):
 
 
 # ============================================================
-# DOMAIN
+# DOMAIN INVESTIGATOR
 # ============================================================
 
 def normalize_domain(domain):
@@ -675,14 +674,12 @@ def generate_identity(
     }
 
     if nationality:
-
         params["nat"] = nationality
 
     if gender in (
         "male",
         "female"
     ):
-
         params["gender"] = gender
 
     query = urllib.parse.urlencode(
@@ -690,13 +687,16 @@ def generate_identity(
     )
 
     url = (
-        f"{API_URL}?{query}"
+        f"{RANDOM_USER_API}?{query}"
     )
 
     return api_get(url)
 
 
-def print_identity(user, number=None):
+def print_identity(
+    user,
+    number=None
+):
 
     if number is not None:
 
@@ -1085,6 +1085,524 @@ def identity_generator():
 
 
 # ============================================================
+# DISPOSABLE INBOX
+# ============================================================
+
+CURRENT_MAILBOX = None
+
+
+def temp_mail_get(params):
+
+    query = urllib.parse.urlencode(
+        params
+    )
+
+    url = (
+        f"{TEMP_MAIL_API}?{query}"
+    )
+
+    return api_get(
+        url,
+        timeout=20
+    )
+
+
+def generate_temp_email():
+
+    global CURRENT_MAILBOX
+
+    data = temp_mail_get({
+        "action": "genRandomMailbox",
+        "count": 1
+    })
+
+    if not data or not isinstance(
+        data,
+        list
+    ):
+
+        raise RuntimeError(
+            "Temporary mailbox could not be created."
+        )
+
+    CURRENT_MAILBOX = data[0]
+
+    return CURRENT_MAILBOX
+
+
+def get_temp_messages():
+
+    if not CURRENT_MAILBOX:
+        return []
+
+    if "@" not in CURRENT_MAILBOX:
+        return []
+
+    login, domain = CURRENT_MAILBOX.split(
+        "@",
+        1
+    )
+
+    return temp_mail_get({
+        "action": "getMessages",
+        "login": login,
+        "domain": domain
+    })
+
+
+def read_temp_message(message_id):
+
+    if not CURRENT_MAILBOX:
+        return None
+
+    if "@" not in CURRENT_MAILBOX:
+        return None
+
+    login, domain = CURRENT_MAILBOX.split(
+        "@",
+        1
+    )
+
+    return temp_mail_get({
+        "action": "readMessage",
+        "login": login,
+        "domain": domain,
+        "id": message_id
+    })
+
+
+def clean_message_body(content):
+
+    if not content:
+        return "(No message content)"
+
+    content = html.unescape(
+        str(content)
+    )
+
+    content = re.sub(
+        r"<br\s*/?>",
+        "\n",
+        content,
+        flags=re.I
+    )
+
+    content = re.sub(
+        r"</p\s*>",
+        "\n",
+        content,
+        flags=re.I
+    )
+
+    content = re.sub(
+        r"<[^>]+>",
+        "",
+        content
+    )
+
+    return content.strip()
+
+
+def show_temp_inbox():
+
+    if not CURRENT_MAILBOX:
+
+        error(
+            "Generate a temporary email first."
+        )
+
+        return
+
+    info(
+        "Refreshing temporary inbox..."
+    )
+
+    messages = get_temp_messages()
+
+    print()
+
+    print(
+        f"{BOLD}INBOX{RESET}"
+    )
+
+    print(
+        "============================================================"
+    )
+
+    if not messages:
+
+        info(
+            "No messages received yet."
+        )
+
+        return
+
+    for index, message in enumerate(
+        messages,
+        1
+    ):
+
+        subject = message.get(
+            "subject",
+            "(No subject)"
+        )
+
+        sender = message.get(
+            "from",
+            "Unknown"
+        )
+
+        date = message.get(
+            "date",
+            "Unknown"
+        )
+
+        message_id = message.get(
+            "id",
+            "Unknown"
+        )
+
+        print(
+            f"[{index}] {subject}"
+        )
+
+        print(
+            f"    From : {sender}"
+        )
+
+        print(
+            f"    Date : {date}"
+        )
+
+        print(
+            f"    ID   : {message_id}"
+        )
+
+        print(
+            "------------------------------------------------------------"
+        )
+
+    write_log(
+        f"Disposable Inbox checked: {CURRENT_MAILBOX}"
+    )
+
+
+def read_temp_email():
+
+    if not CURRENT_MAILBOX:
+
+        error(
+            "Generate a temporary email first."
+        )
+
+        return
+
+    messages = get_temp_messages()
+
+    if not messages:
+
+        info(
+            "No messages available."
+        )
+
+        return
+
+    print()
+
+    print(
+        f"{BOLD}AVAILABLE MESSAGES{RESET}"
+    )
+
+    print(
+        "============================================================"
+    )
+
+    for index, message in enumerate(
+        messages,
+        1
+    ):
+
+        print(
+            f"[{index}] "
+            f"{message.get('subject', '(No subject)')}"
+        )
+
+    print()
+
+    try:
+
+        selected = int(
+            input(
+                "Select message: "
+            ).strip()
+        )
+
+        if (
+            selected < 1
+            or selected > len(messages)
+        ):
+
+            error(
+                "Invalid message selection."
+            )
+
+            return
+
+    except ValueError:
+
+        error(
+            "Please enter a valid number."
+        )
+
+        return
+
+    message_id = messages[
+        selected - 1
+    ].get("id")
+
+    if not message_id:
+
+        error(
+            "Message ID unavailable."
+        )
+
+        return
+
+    info(
+        "Loading message..."
+    )
+
+    message = read_temp_message(
+        message_id
+    )
+
+    if not message:
+
+        error(
+            "Unable to read message."
+        )
+
+        return
+
+    print()
+
+    print(
+        f"{BOLD}{CYAN}MESSAGE{RESET}"
+    )
+
+    print(
+        "============================================================"
+    )
+
+    print(
+        f"From    : "
+        f"{message.get('from', 'Unknown')}"
+    )
+
+    print(
+        f"Subject : "
+        f"{message.get('subject', '(No subject)')}"
+    )
+
+    print(
+        f"Date    : "
+        f"{message.get('date', 'Unknown')}"
+    )
+
+    print(
+        f"To      : "
+        f"{message.get('to', CURRENT_MAILBOX)}"
+    )
+
+    print(
+        "------------------------------------------------------------"
+    )
+
+    content = (
+        message.get("textBody")
+        or message.get("body")
+        or message.get("content")
+        or message.get("htmlBody")
+        or "(No message content)"
+    )
+
+    print(
+        clean_message_body(content)
+    )
+
+    print(
+        "============================================================"
+    )
+
+    write_log(
+        f"Disposable Inbox message read: "
+        f"{CURRENT_MAILBOX} | ID={message_id}"
+    )
+
+
+def disposable_inbox():
+
+    global CURRENT_MAILBOX
+
+    while True:
+
+        clear_screen()
+        banner()
+
+        print(
+            f"{BOLD}{WHITE}"
+            "DISPOSABLE INBOX"
+            f"{RESET}\n"
+        )
+
+        if CURRENT_MAILBOX:
+
+            print(
+                f"{GREEN}Current Email:{RESET}"
+            )
+
+            print(
+                f"{BOLD}{CURRENT_MAILBOX}{RESET}"
+            )
+
+        else:
+
+            print(
+                f"{YELLOW}"
+                "No temporary email generated."
+                f"{RESET}"
+            )
+
+        print()
+
+        print(
+            f"{CYAN}[1]{RESET} "
+            "Generate New Email"
+        )
+
+        print(
+            f"{CYAN}[2]{RESET} "
+            "Refresh Inbox"
+        )
+
+        print(
+            f"{CYAN}[3]{RESET} "
+            "Read Message"
+        )
+
+        print(
+            f"{CYAN}[4]{RESET} "
+            "Show Current Email"
+        )
+
+        print(
+            f"{CYAN}[0]{RESET} "
+            "Back"
+        )
+
+        print()
+
+        choice = input(
+            f"{BOLD}Disposable Inbox > {RESET}"
+        ).strip()
+
+        if choice == "1":
+
+            try:
+
+                info(
+                    "Generating temporary email..."
+                )
+
+                email = generate_temp_email()
+
+                success(
+                    f"Temporary email created: {email}"
+                )
+
+                write_log(
+                    f"Disposable Inbox created: {email}"
+                )
+
+            except Exception as exc:
+
+                error(
+                    f"Unable to create mailbox: {exc}"
+                )
+
+            pause()
+
+        elif choice == "2":
+
+            try:
+
+                show_temp_inbox()
+
+            except Exception as exc:
+
+                error(
+                    f"Inbox request failed: {exc}"
+                )
+
+            pause()
+
+        elif choice == "3":
+
+            try:
+
+                read_temp_email()
+
+            except Exception as exc:
+
+                error(
+                    f"Unable to read message: {exc}"
+                )
+
+            pause()
+
+        elif choice == "4":
+
+            if CURRENT_MAILBOX:
+
+                print()
+
+                print(
+                    f"{BOLD}Current Temporary Email:{RESET}"
+                )
+
+                print(
+                    f"\n{CURRENT_MAILBOX}"
+                )
+
+                print()
+
+                print(
+                    "Use this address for authorized "
+                    "testing purposes."
+                )
+
+            else:
+
+                info(
+                    "No temporary email generated."
+                )
+
+            pause()
+
+        elif choice == "0":
+
+            break
+
+        else:
+
+            error(
+                "Invalid option."
+            )
+
+            time.sleep(1)
+
+
+# ============================================================
 # CONNECTIVITY
 # ============================================================
 
@@ -1277,6 +1795,11 @@ def about():
         "synthetic data for testing."
     )
 
+    print(
+        "Disposable Inbox is intended "
+        "for authorized testing purposes."
+    )
+
     pause()
 
 
@@ -1354,20 +1877,7 @@ def main_menu():
 
         elif choice == "2":
 
-            # Existing Disposable Inbox
-            # from your previous version.
-            print(
-                "\nDisposable Inbox module "
-                "is available in your previous build."
-            )
-
-            print(
-                "If you want it merged with this "
-                "version, keep your existing "
-                "Disposable Inbox functions."
-            )
-
-            pause()
+            disposable_inbox()
 
         elif choice == "3":
 
