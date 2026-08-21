@@ -3,9 +3,10 @@
 import json
 import os
 import platform
+import random
 import re
 import socket
-import ssl
+import string
 import sys
 import time
 import urllib.error
@@ -15,8 +16,13 @@ from datetime import datetime
 
 
 APP_NAME = "SignalLab"
-VERSION = "2.0.0"
+VERSION = "3.0.0"
+
 LOG_FILE = "signallab.log"
+MAIL_SESSION_FILE = "tempmail_session.json"
+
+MAIL_API = "https://api.mail.tm"
+
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -30,7 +36,7 @@ WHITE = "\033[97m"
 
 
 # ============================================================
-# BASIC FUNCTIONS
+# GENERAL
 # ============================================================
 
 def clear_screen():
@@ -49,7 +55,7 @@ def banner():
              __/ |
             |___/
 {RESET}
-{WHITE}Network, Domain & Mail Intelligence Toolkit{RESET}
+{WHITE}Network, Domain, Mail & OSINT Toolkit{RESET}
 {YELLOW}Version {VERSION} • Linux / Termux / Windows{RESET}
 """)
 
@@ -100,58 +106,905 @@ def valid_domain(domain):
     if not domain or len(domain) > 253:
         return False
 
-    pattern = r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
+    pattern = (
+        r"^(?=.{1,253}$)"
+        r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+        r"[a-z]{2,63}$"
+    )
 
     return bool(re.match(pattern, domain, re.IGNORECASE))
 
 
-def http_get_json(url, timeout=12):
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "SignalLab/2.0",
-            "Accept": "application/json"
-        }
+def random_username():
+    chars = string.ascii_lowercase + string.digits
+
+    return (
+        "".join(random.choice(chars) for _ in range(8))
+        + str(random.randint(100, 999))
     )
 
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        data = response.read().decode("utf-8", errors="replace")
-        return response.status, json.loads(data)
 
-
-def http_get_text(url, timeout=12):
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "SignalLab/2.0"
-        }
+def random_password():
+    chars = (
+        string.ascii_letters
+        + string.digits
+        + "!@#$%^&*"
     )
 
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        data = response.read().decode("utf-8", errors="replace")
-        return response.status, response.headers, data
+    return "".join(
+        random.choice(chars)
+        for _ in range(18)
+    )
 
 
 # ============================================================
-# RDAP / DOMAIN REGISTRATION LOOKUP
+# HTTP HELPERS
+# ============================================================
+
+def api_request(
+    url,
+    method="GET",
+    data=None,
+    headers=None,
+    timeout=15
+):
+
+    request_headers = {
+        "User-Agent": "SignalLab/3.0"
+    }
+
+    if headers:
+        request_headers.update(headers)
+
+    body = None
+
+    if data is not None:
+
+        body = json.dumps(data).encode("utf-8")
+
+        request_headers[
+            "Content-Type"
+        ] = "application/json"
+
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers=request_headers,
+        method=method
+    )
+
+    try:
+
+        with urllib.request.urlopen(
+            request,
+            timeout=timeout
+        ) as response:
+
+            raw = response.read().decode(
+                "utf-8",
+                errors="replace"
+            )
+
+            if not raw:
+                return response.status, {}
+
+            try:
+                return response.status, json.loads(raw)
+            except json.JSONDecodeError:
+                return response.status, raw
+
+    except urllib.error.HTTPError as exc:
+
+        raw = exc.read().decode(
+            "utf-8",
+            errors="replace"
+        )
+
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = raw
+
+        raise RuntimeError(
+            f"HTTP {exc.code}: {data}"
+        )
+
+
+def http_get_json(url, timeout=12):
+
+    return api_request(
+        url,
+        method="GET",
+        timeout=timeout
+    )
+
+
+# ============================================================
+# TEMP MAIL SESSION
+# ============================================================
+
+def save_mail_session(session):
+
+    try:
+
+        with open(
+            MAIL_SESSION_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                session,
+                file,
+                indent=2
+            )
+
+    except OSError as exc:
+
+        error(
+            f"Unable to save mail session: {exc}"
+        )
+
+
+def load_mail_session():
+
+    if not os.path.exists(
+        MAIL_SESSION_FILE
+    ):
+        return None
+
+    try:
+
+        with open(
+            MAIL_SESSION_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            return json.load(file)
+
+    except Exception:
+
+        return None
+
+
+def delete_mail_session():
+
+    try:
+
+        if os.path.exists(
+            MAIL_SESSION_FILE
+        ):
+            os.remove(
+                MAIL_SESSION_FILE
+            )
+
+    except OSError:
+        pass
+
+
+# ============================================================
+# TEMP MAIL - DOMAIN
+# ============================================================
+
+def get_temp_domains():
+
+    status, data = http_get_json(
+        f"{MAIL_API}/domains"
+    )
+
+    domains = []
+
+    for item in data.get(
+        "hydra:member",
+        []
+    ):
+
+        domain = item.get(
+            "domain"
+        )
+
+        if (
+            domain
+            and item.get(
+                "isActive",
+                True
+            )
+        ):
+
+            domains.append(domain)
+
+    return domains
+
+
+# ============================================================
+# TEMP MAIL - CREATE ACCOUNT
+# ============================================================
+
+def create_temp_mail():
+
+    print()
+
+    info(
+        "Getting available temporary mail domains..."
+    )
+
+    try:
+
+        domains = get_temp_domains()
+
+        if not domains:
+            error(
+                "No temporary mail domains are currently available."
+            )
+
+            return None
+
+        domain = domains[0]
+
+        username = random_username()
+        password = random_password()
+
+        address = (
+            f"{username}@{domain}"
+        )
+
+        info(
+            f"Creating mailbox: {address}"
+        )
+
+        status, account = api_request(
+            f"{MAIL_API}/accounts",
+            method="POST",
+            data={
+                "address": address,
+                "password": password
+            }
+        )
+
+        if status not in (
+            200,
+            201
+        ):
+
+            error(
+                "Unable to create temporary mailbox."
+            )
+
+            return None
+
+        status, token_data = api_request(
+            f"{MAIL_API}/token",
+            method="POST",
+            data={
+                "address": address,
+                "password": password
+            }
+        )
+
+        token = token_data.get(
+            "token"
+        )
+
+        if not token:
+
+            error(
+                "Mailbox created, but token was not received."
+            )
+
+            return None
+
+        session = {
+            "id": account.get(
+                "id"
+            ),
+            "address": address,
+            "password": password,
+            "token": token,
+            "created_at": datetime.now().isoformat()
+        }
+
+        save_mail_session(
+            session
+        )
+
+        print()
+        success(
+            "Temporary mailbox created."
+        )
+
+        print(
+            f"\n{BOLD}Your Temporary Email:{RESET}"
+        )
+
+        print(
+            f"{CYAN}{address}{RESET}"
+        )
+
+        print(
+            f"\nCreated: "
+            f"{session['created_at']}"
+        )
+
+        return session
+
+    except Exception as exc:
+
+        error(
+            f"Temporary mail error: {exc}"
+        )
+
+        return None
+
+
+# ============================================================
+# TEMP MAIL - CURRENT ADDRESS
+# ============================================================
+
+def show_current_mail():
+
+    session = load_mail_session()
+
+    if not session:
+
+        print()
+        info(
+            "No temporary mailbox is active."
+        )
+
+        return
+
+    print()
+    print(
+        f"{BOLD}{WHITE}"
+        "CURRENT TEMPORARY MAILBOX"
+        f"{RESET}"
+    )
+
+    print(
+        "--------------------------------"
+    )
+
+    print(
+        f"Address : "
+        f"{CYAN}{session.get('address')}{RESET}"
+    )
+
+    print(
+        f"Created : "
+        f"{session.get('created_at', 'Unknown')}"
+    )
+
+
+# ============================================================
+# TEMP MAIL - LIST MESSAGES
+# ============================================================
+
+def get_mail_messages():
+
+    session = load_mail_session()
+
+    if not session:
+        error(
+            "No active temporary mailbox."
+        )
+        return []
+
+    token = session.get(
+        "token"
+    )
+
+    headers = {
+        "Authorization":
+            f"Bearer {token}"
+    }
+
+    status, data = api_request(
+        f"{MAIL_API}/messages",
+        headers=headers
+    )
+
+    return data.get(
+        "hydra:member",
+        []
+    )
+
+
+def refresh_inbox():
+
+    clear_screen()
+    banner()
+
+    print(
+        f"{BOLD}{WHITE}"
+        "TEMP MAIL INBOX"
+        f"{RESET}\n"
+    )
+
+    session = load_mail_session()
+
+    if not session:
+
+        info(
+            "No mailbox exists."
+        )
+
+        print(
+            "\nUse option 1 to generate one."
+        )
+
+        pause()
+        return
+
+    print(
+        f"Address : "
+        f"{CYAN}{session['address']}{RESET}"
+    )
+
+    print()
+
+    try:
+
+        messages = get_mail_messages()
+
+        if not messages:
+
+            info(
+                "Inbox is empty."
+            )
+
+            pause()
+            return
+
+        print(
+            f"{BOLD}"
+            "MESSAGES"
+            f"{RESET}"
+        )
+
+        print(
+            "--------------------------------"
+        )
+
+        for index, message in enumerate(
+            messages,
+            1
+        ):
+
+            sender = (
+                message
+                .get("from", {})
+                .get("address", "Unknown")
+            )
+
+            subject = message.get(
+                "subject",
+                "(No subject)"
+            )
+
+            seen = message.get(
+                "seen",
+                False
+            )
+
+            status_text = (
+                "READ"
+                if seen
+                else "NEW"
+            )
+
+            print(
+                f"[{index}] "
+                f"{status_text:<4} "
+                f"{sender}"
+            )
+
+            print(
+                f"    Subject: {subject}"
+            )
+
+            print()
+
+        write_log(
+            f"Temp Mail inbox refreshed: "
+            f"{len(messages)} messages"
+        )
+
+    except Exception as exc:
+
+        error(
+            f"Unable to fetch inbox: {exc}"
+        )
+
+    pause()
+
+
+# ============================================================
+# TEMP MAIL - READ MESSAGE
+# ============================================================
+
+def read_message():
+
+    clear_screen()
+    banner()
+
+    print(
+        f"{BOLD}{WHITE}"
+        "READ TEMP MAIL MESSAGE"
+        f"{RESET}\n"
+    )
+
+    session = load_mail_session()
+
+    if not session:
+
+        error(
+            "No active temporary mailbox."
+        )
+
+        pause()
+        return
+
+    try:
+
+        messages = get_mail_messages()
+
+        if not messages:
+
+            info(
+                "Inbox is empty."
+            )
+
+            pause()
+            return
+
+        print(
+            "Available messages:\n"
+        )
+
+        for index, message in enumerate(
+            messages,
+            1
+        ):
+
+            print(
+                f"[{index}] "
+                f"{message.get('subject', '(No subject)')}"
+            )
+
+        print()
+
+        choice = input(
+            "Select message number: "
+        ).strip()
+
+        if not choice.isdigit():
+
+            error(
+                "Invalid message number."
+            )
+
+            pause()
+            return
+
+        index = int(choice) - 1
+
+        if index < 0 or index >= len(
+            messages
+        ):
+
+            error(
+                "Message does not exist."
+            )
+
+            pause()
+            return
+
+        message_id = messages[
+            index
+        ].get("id")
+
+        token = session.get(
+            "token"
+        )
+
+        headers = {
+            "Authorization":
+                f"Bearer {token}"
+        }
+
+        _, message = api_request(
+            f"{MAIL_API}/messages/{message_id}",
+            headers=headers
+        )
+
+        sender = (
+            message
+            .get("from", {})
+            .get("address", "Unknown")
+        )
+
+        subject = message.get(
+            "subject",
+            "(No subject)"
+        )
+
+        created = message.get(
+            "createdAt",
+            "Unknown"
+        )
+
+        text = message.get(
+            "text",
+            ""
+        )
+
+        print()
+        print(
+            f"{BOLD}{WHITE}"
+            "MESSAGE"
+            f"{RESET}"
+        )
+
+        print(
+            "--------------------------------"
+        )
+
+        print(
+            f"From    : {sender}"
+        )
+
+        print(
+            f"Subject : {subject}"
+        )
+
+        print(
+            f"Date    : {created}"
+        )
+
+        print(
+            "\nMessage Body:"
+        )
+
+        print(
+            "--------------------------------"
+        )
+
+        if text:
+
+            print(text)
+
+        else:
+
+            print(
+                "(No plain-text body available.)"
+            )
+
+        write_log(
+            f"Temp Mail message opened: "
+            f"{subject}"
+        )
+
+    except Exception as exc:
+
+        error(
+            f"Unable to read message: {exc}"
+        )
+
+    pause()
+
+
+# ============================================================
+# TEMP MAIL - DELETE MAILBOX
+# ============================================================
+
+def delete_temp_mailbox():
+
+    clear_screen()
+    banner()
+
+    print(
+        f"{BOLD}{WHITE}"
+        "DELETE TEMPORARY MAILBOX"
+        f"{RESET}\n"
+    )
+
+    session = load_mail_session()
+
+    if not session:
+
+        info(
+            "No active mailbox."
+        )
+
+        pause()
+        return
+
+    address = session.get(
+        "address"
+    )
+
+    confirm = input(
+        f"Delete {address}? "
+        "(yes/no): "
+    ).strip().lower()
+
+    if confirm != "yes":
+
+        info(
+            "Mailbox deletion cancelled."
+        )
+
+        pause()
+        return
+
+    try:
+
+        token = session.get(
+            "token"
+        )
+
+        headers = {
+            "Authorization":
+                f"Bearer {token}"
+        }
+
+        mailbox_id = session.get(
+            "id"
+        )
+
+        api_request(
+            f"{MAIL_API}/accounts/{mailbox_id}",
+            method="DELETE",
+            headers=headers
+        )
+
+        delete_mail_session()
+
+        success(
+            "Temporary mailbox deleted."
+        )
+
+        write_log(
+            f"Temp Mail mailbox deleted: "
+            f"{address}"
+        )
+
+    except Exception as exc:
+
+        error(
+            f"Unable to delete mailbox: {exc}"
+        )
+
+    pause()
+
+
+# ============================================================
+# TEAM MAIL MENU
+# ============================================================
+
+def team_mail():
+
+    while True:
+
+        clear_screen()
+        banner()
+
+        print(
+            f"{BOLD}{WHITE}"
+            "TEAM MAIL / TEMP MAIL"
+            f"{RESET}\n"
+        )
+
+        show_current_mail()
+
+        print()
+
+        print(
+            f"{CYAN}[1]{RESET} "
+            "Generate New Temporary Email"
+        )
+
+        print(
+            f"{CYAN}[2]{RESET} "
+            "Refresh Inbox"
+        )
+
+        print(
+            f"{CYAN}[3]{RESET} "
+            "Read Message"
+        )
+
+        print(
+            f"{CYAN}[4]{RESET} "
+            "Delete Current Mailbox"
+        )
+
+        print(
+            f"{CYAN}[5]{RESET} "
+            "Generate Another Email"
+        )
+
+        print(
+            f"{CYAN}[0]{RESET} "
+            "Back"
+        )
+
+        print()
+
+        choice = input(
+            f"{BOLD}Team Mail > {RESET}"
+        ).strip()
+
+        if choice == "1":
+
+            create_temp_mail()
+            pause()
+
+        elif choice == "2":
+
+            refresh_inbox()
+
+        elif choice == "3":
+
+            read_message()
+
+        elif choice == "4":
+
+            delete_temp_mailbox()
+
+        elif choice == "5":
+
+            create_temp_mail()
+            pause()
+
+        elif choice == "0":
+
+            break
+
+        else:
+
+            error(
+                "Invalid option."
+            )
+
+            time.sleep(1)
+
+
+# ============================================================
+# RDAP DOMAIN LOOKUP
 # ============================================================
 
 def get_rdap_server(domain):
+
     tld = domain.split(".")[-1].lower()
 
-    bootstrap_url = "https://data.iana.org/rdap/dns.json"
+    bootstrap_url = (
+        "https://data.iana.org/rdap/dns.json"
+    )
 
     try:
-        _, data = http_get_json(bootstrap_url)
 
-        for service in data.get("services", []):
+        _, data = http_get_json(
+            bootstrap_url
+        )
+
+        for service in data.get(
+            "services",
+            []
+        ):
+
             if not service or len(service) < 2:
                 continue
 
             tlds = service[0]
             servers = service[1]
 
-            if tld in [str(x).lower() for x in tlds]:
+            if tld in [
+                str(x).lower()
+                for x in tlds
+            ]:
+
                 if servers:
                     return servers[0].rstrip("/")
 
@@ -162,90 +1015,146 @@ def get_rdap_server(domain):
 
 
 def format_rdap_date(value):
+
     if not value:
         return "Not available"
 
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed.strftime("%Y-%m-%d")
+
+        parsed = datetime.fromisoformat(
+            value.replace(
+                "Z",
+                "+00:00"
+            )
+        )
+
+        return parsed.strftime(
+            "%Y-%m-%d"
+        )
+
     except Exception:
-        return value[:10] if len(value) >= 10 else value
+
+        return (
+            value[:10]
+            if len(value) >= 10
+            else value
+        )
 
 
 def extract_event(events, event_name):
+
     for event in events or []:
-        if event.get("eventAction") == event_name:
-            return format_rdap_date(event.get("eventDate"))
+
+        if event.get(
+            "eventAction"
+        ) == event_name:
+
+            return format_rdap_date(
+                event.get(
+                    "eventDate"
+                )
+            )
 
     return "Not available"
 
 
 def extract_registrar(entities):
+
     for entity in entities or []:
-        roles = entity.get("roles", [])
 
-        if "registrar" in roles:
-            vcard = entity.get("vcardArray", [])
+        roles = entity.get(
+            "roles",
+            []
+        )
 
-            if (
-                isinstance(vcard, list)
-                and len(vcard) > 1
-                and isinstance(vcard[1], list)
-            ):
-                for item in vcard[1]:
-                    if len(item) >= 4 and item[0] == "fn":
-                        return item[3]
+        if "registrar" not in roles:
+            continue
+
+        vcard = entity.get(
+            "vcardArray",
+            []
+        )
+
+        if (
+            isinstance(vcard, list)
+            and len(vcard) > 1
+        ):
+
+            for item in vcard[1]:
+
+                if (
+                    len(item) >= 4
+                    and item[0] == "fn"
+                ):
+
+                    return item[3]
 
     return "Not available"
 
 
 def domain_registration_lookup():
+
     clear_screen()
     banner()
 
-    print(f"{BOLD}{WHITE}DOMAIN REGISTRATION LOOKUP{RESET}\n")
+    print(
+        f"{BOLD}{WHITE}"
+        "DOMAIN REGISTRATION LOOKUP"
+        f"{RESET}\n"
+    )
 
-    domain = input("Enter domain: ").strip()
-    domain = normalize_domain(domain)
+    domain = input(
+        "Enter domain: "
+    ).strip()
+
+    domain = normalize_domain(
+        domain
+    )
 
     if not valid_domain(domain):
-        error("Please enter a valid domain name.")
+
+        error(
+            "Please enter a valid domain."
+        )
+
         pause()
         return
 
     print()
-    info(f"Looking up registration data for {domain}...")
 
-    rdap_server = get_rdap_server(domain)
+    info(
+        f"Looking up registration data "
+        f"for {domain}..."
+    )
+
+    rdap_server = get_rdap_server(
+        domain
+    )
 
     if not rdap_server:
-        error("No RDAP server found for this domain's TLD.")
+
+        error(
+            "No RDAP server found."
+        )
+
         pause()
         return
 
-    rdap_url = f"{rdap_server}/domain/{urllib.parse.quote(domain)}"
+    rdap_url = (
+        f"{rdap_server}/domain/"
+        f"{urllib.parse.quote(domain)}"
+    )
 
     try:
-        status_code, data = http_get_json(rdap_url)
 
-        if status_code == 404:
-            print()
-            print(f"{BOLD}DOMAIN INFORMATION{RESET}")
-            print("--------------------------------")
-            print(f"Domain : {domain}")
-            print("Status : NOT REGISTERED")
-            write_log(f"RDAP lookup: {domain} | not registered")
-            pause()
-            return
+        status_code, data = http_get_json(
+            rdap_url
+        )
 
-        statuses = data.get("status", [])
-
-        registration_status = "Registered"
-
-        if statuses:
-            status_text = ", ".join(statuses)
-        else:
-            status_text = "Not available"
+        statuses = data.get(
+            "status",
+            []
+        )
 
         registration_date = extract_event(
             data.get("events"),
@@ -268,238 +1177,236 @@ def domain_registration_lookup():
 
         nameservers = []
 
-        for ns in data.get("nameservers", []):
-            name = ns.get("ldhName")
+        for ns in data.get(
+            "nameservers",
+            []
+        ):
+
+            name = ns.get(
+                "ldhName"
+            )
 
             if name:
-                nameservers.append(name.rstrip("."))
+                nameservers.append(
+                    name.rstrip(".")
+                )
 
         print()
-        print(f"{BOLD}{WHITE}DOMAIN INFORMATION{RESET}")
-        print("--------------------------------")
-        print(f"Domain          : {domain}")
-        print(f"Status          : {registration_status}")
-        print(f"Registration    : {registration_date}")
-        print(f"Expiration      : {expiration_date}")
-        print(f"Last Updated    : {updated_date}")
-        print(f"Registrar       : {registrar}")
-        print(f"RDAP Server     : {rdap_server}")
 
-        print("\nDomain Status:")
-        print(f"  {status_text}")
+        print(
+            f"{BOLD}{WHITE}"
+            "DOMAIN INFORMATION"
+            f"{RESET}"
+        )
 
-        print("\nName Servers:")
+        print(
+            "--------------------------------"
+        )
+
+        print(
+            f"Domain          : {domain}"
+        )
+
+        print(
+            "Status          : Registered"
+        )
+
+        print(
+            f"Registration    : "
+            f"{registration_date}"
+        )
+
+        print(
+            f"Expiration      : "
+            f"{expiration_date}"
+        )
+
+        print(
+            f"Last Updated    : "
+            f"{updated_date}"
+        )
+
+        print(
+            f"Registrar       : "
+            f"{registrar}"
+        )
+
+        print(
+            f"RDAP Server     : "
+            f"{rdap_server}"
+        )
+
+        print(
+            "\nDomain Status:"
+        )
+
+        if statuses:
+
+            for status in statuses:
+                print(
+                    f"  • {status}"
+                )
+
+        else:
+
+            print(
+                "  Not available"
+            )
+
+        print(
+            "\nName Servers:"
+        )
 
         if nameservers:
+
             for server in nameservers:
-                print(f"  • {server}")
+                print(
+                    f"  • {server}"
+                )
+
         else:
-            print("  Not available")
+
+            print(
+                "  Not available"
+            )
 
         write_log(
-            f"RDAP lookup: {domain} | "
-            f"registered={registration_status} | "
-            f"expiration={expiration_date}"
+            f"RDAP lookup: {domain}"
         )
 
     except urllib.error.HTTPError as exc:
 
         if exc.code == 404:
-            print()
-            print(f"{BOLD}DOMAIN INFORMATION{RESET}")
-            print("--------------------------------")
-            print(f"Domain : {domain}")
-            print("Status : NOT REGISTERED")
 
-            write_log(
-                f"RDAP lookup: {domain} | not registered"
+            print(
+                f"\nDomain : {domain}"
+            )
+
+            print(
+                "Status : NOT REGISTERED"
             )
 
         else:
-            error(f"RDAP server returned HTTP {exc.code}.")
+
+            error(
+                f"RDAP HTTP error: {exc.code}"
+            )
 
     except Exception as exc:
-        error(f"Unable to retrieve registration data: {exc}")
+
+        error(
+            f"RDAP lookup failed: {exc}"
+        )
 
     pause()
 
 
 # ============================================================
-# DNS OVER HTTPS
+# DNS LOOKUP
 # ============================================================
 
 def doh_query(name, record_type):
-    encoded_name = urllib.parse.quote(name)
+
+    encoded_name = urllib.parse.quote(
+        name
+    )
 
     url = (
         "https://cloudflare-dns.com/dns-query"
-        f"?name={encoded_name}&type={record_type}"
+        f"?name={encoded_name}"
+        f"&type={record_type}"
     )
 
     request = urllib.request.Request(
         url,
         headers={
-            "Accept": "application/dns-json",
-            "User-Agent": "SignalLab/2.0"
+            "Accept":
+                "application/dns-json",
+            "User-Agent":
+                "SignalLab/3.0"
         }
     )
 
-    with urllib.request.urlopen(request, timeout=10) as response:
-        data = response.read().decode("utf-8", errors="replace")
-        return json.loads(data)
+    with urllib.request.urlopen(
+        request,
+        timeout=10
+    ) as response:
+
+        return json.loads(
+            response.read().decode(
+                "utf-8",
+                errors="replace"
+            )
+        )
 
 
-def get_dns_records(name, record_type):
+def get_dns_records(
+    name,
+    record_type
+):
+
     try:
-        data = doh_query(name, record_type)
 
-        answers = data.get("Answer", [])
+        data = doh_query(
+            name,
+            record_type
+        )
+
+        answers = data.get(
+            "Answer",
+            []
+        )
 
         records = []
 
         for answer in answers:
-            value = answer.get("data")
+
+            value = answer.get(
+                "data"
+            )
 
             if value:
-                records.append(value)
+                records.append(
+                    value
+                )
 
         return records
 
     except Exception:
+
         return []
 
 
-# ============================================================
-# TEAM MAIL / EMAIL SECURITY
-# ============================================================
+def dns_lookup():
 
-def team_mail():
     clear_screen()
     banner()
-
-    print(f"{BOLD}{WHITE}TEAM MAIL / DOMAIN MAIL INTELLIGENCE{RESET}\n")
-
-    domain = input("Enter domain: ").strip()
-    domain = normalize_domain(domain)
-
-    if not valid_domain(domain):
-        error("Please enter a valid domain.")
-        pause()
-        return
-
-    print()
-    info(f"Checking mail configuration for {domain}...")
-
-    mx_records = get_dns_records(domain, "MX")
-    txt_records = get_dns_records(domain, "TXT")
-    dmarc_records = get_dns_records(
-        f"_dmarc.{domain}",
-        "TXT"
-    )
-
-    print()
-    print(f"{BOLD}{WHITE}MAIL CONFIGURATION{RESET}")
-    print("--------------------------------")
-    print(f"Domain : {domain}")
-
-    print("\nMX Records:")
-
-    if mx_records:
-
-        for record in mx_records:
-            print(f"  • {record}")
-
-    else:
-        print("  No MX records found.")
-
-    spf_records = []
-
-    for record in txt_records:
-
-        clean_record = record.strip('"')
-
-        if clean_record.lower().startswith("v=spf1"):
-            spf_records.append(clean_record)
-
-    print("\nSPF:")
-
-    if spf_records:
-
-        for record in spf_records:
-            print(f"  [+] {record}")
-
-    else:
-        print("  [!] SPF record not found.")
-
-    print("\nDMARC:")
-
-    if dmarc_records:
-
-        for record in dmarc_records:
-            print(f"  [+] {record}")
-
-    else:
-        print("  [!] DMARC record not found.")
-
-    print("\nMail Status:")
-
-    if mx_records:
-        print("  [+] Domain has mail servers.")
-    else:
-        print("  [!] No MX mail server found.")
-
-    if spf_records:
-        print("  [+] SPF configured.")
-    else:
-        print("  [!] SPF not detected.")
-
-    if dmarc_records:
-        print("  [+] DMARC configured.")
-    else:
-        print("  [!] DMARC not detected.")
-
-    print("\nSuggested Team Addresses:")
-    print("  • contact@" + domain)
-    print("  • support@" + domain)
-    print("  • hello@" + domain)
-    print("  • info@" + domain)
-    print("  • team@" + domain)
 
     print(
-        "\nNote: SignalLab does not create mailboxes or "
-        "retrieve private email accounts."
+        f"{BOLD}{WHITE}"
+        "DNS / HOST LOOKUP"
+        f"{RESET}\n"
     )
 
-    write_log(
-        f"Team Mail lookup: {domain} | "
-        f"MX={len(mx_records)} | "
-        f"SPF={len(spf_records)} | "
-        f"DMARC={len(dmarc_records)}"
+    hostname = input(
+        "Enter hostname: "
+    ).strip()
+
+    hostname = normalize_domain(
+        hostname
     )
-
-    pause()
-
-
-# ============================================================
-# DNS / HOST LOOKUP
-# ============================================================
-
-def dns_lookup():
-    clear_screen()
-    banner()
-
-    print(f"{BOLD}{WHITE}DNS / HOST LOOKUP{RESET}\n")
-
-    hostname = input("Enter hostname: ").strip()
 
     if not hostname:
-        error("Hostname cannot be empty.")
+
+        error(
+            "Hostname cannot be empty."
+        )
+
         pause()
         return
 
-    hostname = normalize_domain(hostname)
-
     try:
+
         start = time.perf_counter()
 
         addresses = socket.getaddrinfo(
@@ -509,7 +1416,8 @@ def dns_lookup():
         )
 
         elapsed = (
-            time.perf_counter() - start
+            time.perf_counter()
+            - start
         ) * 1000
 
         ips = sorted(
@@ -520,22 +1428,38 @@ def dns_lookup():
         )
 
         print()
-        success("DNS lookup successful.")
 
-        print(f"  Host          : {hostname}")
+        success(
+            "DNS lookup successful."
+        )
 
-        for index, ip in enumerate(ips, 1):
-            print(f"  IPv4 #{index:<6}: {ip}")
+        print(
+            f"  Host        : {hostname}"
+        )
 
-        print(f"  Lookup time   : {elapsed:.2f} ms")
+        for index, ip in enumerate(
+            ips,
+            1
+        ):
+
+            print(
+                f"  IPv4 #{index}: {ip}"
+            )
+
+        print(
+            f"  Lookup time : "
+            f"{elapsed:.2f} ms"
+        )
 
         write_log(
-            f"DNS lookup: {hostname} | "
-            f"IPs={','.join(ips)}"
+            f"DNS lookup: {hostname}"
         )
 
     except socket.gaierror:
-        error("Unable to resolve hostname.")
+
+        error(
+            "Unable to resolve hostname."
+        )
 
     pause()
 
@@ -545,62 +1469,151 @@ def dns_lookup():
 # ============================================================
 
 def network_info():
+
     clear_screen()
     banner()
 
-    print(f"{BOLD}{WHITE}NETWORK INFORMATION{RESET}\n")
+    print(
+        f"{BOLD}{WHITE}"
+        "NETWORK INFORMATION"
+        f"{RESET}\n"
+    )
 
     hostname = socket.gethostname()
 
     try:
-        local_ip = socket.gethostbyname(hostname)
+
+        local_ip = socket.gethostbyname(
+            hostname
+        )
+
     except socket.gaierror:
+
         local_ip = "Unavailable"
 
-    print(f"  Hostname : {hostname}")
-    print(f"  Local IP : {local_ip}")
-    print(f"  System   : {platform.system()}")
-    print(f"  Release  : {platform.release()}")
-    print(f"  Machine  : {platform.machine()}")
-    print(f"  Python   : {platform.python_version()}")
+    print(
+        f"{BOLD}SYSTEM{RESET}"
+    )
 
-    write_log("Displayed network/system information.")
+    print(
+        f"Hostname      : {hostname}"
+    )
+
+    print(
+        f"System        : "
+        f"{platform.system()}"
+    )
+
+    print(
+        f"Release       : "
+        f"{platform.release()}"
+    )
+
+    print(
+        f"Machine       : "
+        f"{platform.machine()}"
+    )
+
+    print(
+        f"Python        : "
+        f"{platform.python_version()}"
+    )
+
+    print(
+        f"\n{BOLD}NETWORK{RESET}"
+    )
+
+    print(
+        f"Local IP      : {local_ip}"
+    )
+
+    try:
+
+        public_ip = urllib.request.urlopen(
+            "https://api.ipify.org",
+            timeout=5
+        ).read().decode()
+
+    except Exception:
+
+        public_ip = "Unavailable"
+
+    print(
+        f"Public IPv4   : {public_ip}"
+    )
+
+    print(
+        f"\n{BOLD}HOST INFORMATION{RESET}"
+    )
+
+    try:
+
+        fqdn = socket.getfqdn()
+
+        print(
+            f"FQDN          : {fqdn}"
+        )
+
+    except Exception:
+
+        print(
+            "FQDN          : Unavailable"
+        )
+
+    write_log(
+        "Displayed network information."
+    )
 
     pause()
 
 
 # ============================================================
-# HTTP / API TESTER
+# HTTP API TESTER
 # ============================================================
 
 def api_test():
+
     clear_screen()
     banner()
 
-    print(f"{BOLD}{WHITE}HTTP / API RESPONSE TESTER{RESET}\n")
+    print(
+        f"{BOLD}{WHITE}"
+        "HTTP / API RESPONSE TESTER"
+        f"{RESET}\n"
+    )
 
-    url = input("Enter URL: ").strip()
+    url = input(
+        "Enter URL: "
+    ).strip()
 
-    if not url:
-        error("URL cannot be empty.")
+    if not url.startswith(
+        (
+            "http://",
+            "https://"
+        )
+    ):
+
+        error(
+            "URL must start with "
+            "http:// or https://"
+        )
+
         pause()
         return
 
-    if not url.startswith(("http://", "https://")):
-        error("URL must start with http:// or https://")
-        pause()
-        return
-
-    print()
-    info("Testing endpoint...")
+    info(
+        "Testing endpoint..."
+    )
 
     start = time.perf_counter()
 
     try:
+
         request = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "SignalLab/2.0"
+                "User-Agent":
+                    "SignalLab/3.0"
             }
         )
 
@@ -610,102 +1623,126 @@ def api_test():
         ) as response:
 
             elapsed = (
-                time.perf_counter() - start
+                time.perf_counter()
+                - start
             ) * 1000
 
-            status = response.status
-            content_type = response.headers.get(
-                "Content-Type",
-                "Unknown"
-            )
-
-            server = response.headers.get(
-                "Server",
-                "Not disclosed"
-            )
-
             print()
-            success("Request completed.")
 
-            print(f"  Status        : {status}")
-            print(f"  Response time : {elapsed:.2f} ms")
-            print(f"  Content-Type  : {content_type}")
-            print(f"  Server        : {server}")
+            success(
+                "Request completed."
+            )
+
+            print(
+                f"Status        : "
+                f"{response.status}"
+            )
+
+            print(
+                f"Response time : "
+                f"{elapsed:.2f} ms"
+            )
+
+            print(
+                f"Content-Type  : "
+                f"{response.headers.get('Content-Type', 'Unknown')}"
+            )
+
+            print(
+                f"Server        : "
+                f"{response.headers.get('Server', 'Not disclosed')}"
+            )
 
             write_log(
                 f"API test: {url} | "
-                f"status={status} | "
-                f"time={elapsed:.2f}ms"
+                f"status={response.status}"
             )
 
     except urllib.error.HTTPError as exc:
 
-        elapsed = (
-            time.perf_counter() - start
-        ) * 1000
-
-        error(f"HTTP error: {exc.code}")
-
-        print(
-            f"  Response time : {elapsed:.2f} ms"
+        error(
+            f"HTTP error: {exc.code}"
         )
 
     except urllib.error.URLError as exc:
-        error(f"Connection failed: {exc.reason}")
+
+        error(
+            f"Connection failed: "
+            f"{exc.reason}"
+        )
 
     except Exception as exc:
-        error(f"Unexpected error: {exc}")
+
+        error(
+            f"Unexpected error: {exc}"
+        )
 
     pause()
 
 
 # ============================================================
-# CONNECTIVITY TEST
+# CONNECTIVITY
 # ============================================================
 
 def connectivity_test():
+
     clear_screen()
     banner()
 
-    print(f"{BOLD}{WHITE}CONNECTIVITY TEST{RESET}\n")
+    print(
+        f"{BOLD}{WHITE}"
+        "CONNECTIVITY TEST"
+        f"{RESET}\n"
+    )
 
     host = input(
         "Enter host (example.com): "
     ).strip()
 
-    if not host:
-        error("Host cannot be empty.")
-        pause()
-        return
-
-    host = normalize_domain(host)
-
-    print()
+    host = normalize_domain(
+        host
+    )
 
     try:
+
         start = time.perf_counter()
 
         with socket.create_connection(
             (host, 443),
             timeout=5
         ):
+
             elapsed = (
-                time.perf_counter() - start
+                time.perf_counter()
+                - start
             ) * 1000
 
-        success("TCP connectivity available.")
+        success(
+            "TCP connectivity available."
+        )
 
-        print(f"  Host : {host}")
-        print("  Port : 443")
-        print(f"  Time : {elapsed:.2f} ms")
+        print(
+            f"Host : {host}"
+        )
+
+        print(
+            "Port : 443"
+        )
+
+        print(
+            f"Time : {elapsed:.2f} ms"
+        )
 
         write_log(
             f"Connectivity test: "
-            f"{host}:443 | {elapsed:.2f}ms"
+            f"{host}:443"
         )
 
     except OSError as exc:
-        error(f"Connection failed: {exc}")
+
+        error(
+            f"Connection failed: {exc}"
+        )
 
     pause()
 
@@ -715,13 +1752,24 @@ def connectivity_test():
 # ============================================================
 
 def show_logs():
+
     clear_screen()
     banner()
 
-    print(f"{BOLD}{WHITE}SIGNALLAB LOGS{RESET}\n")
+    print(
+        f"{BOLD}{WHITE}"
+        "SIGNALLAB LOGS"
+        f"{RESET}\n"
+    )
 
-    if not os.path.exists(LOG_FILE):
-        info("No logs available yet.")
+    if not os.path.exists(
+        LOG_FILE
+    ):
+
+        info(
+            "No logs available."
+        )
+
         pause()
         return
 
@@ -735,13 +1783,17 @@ def show_logs():
 
             content = file.read()
 
-        if content.strip():
-            print(content)
-        else:
-            info("Log file is empty.")
+        print(
+            content
+            if content.strip()
+            else "Log file is empty."
+        )
 
     except OSError as exc:
-        error(f"Unable to read logs: {exc}")
+
+        error(
+            f"Unable to read logs: {exc}"
+        )
 
     pause()
 
@@ -751,30 +1803,80 @@ def show_logs():
 # ============================================================
 
 def about():
+
     clear_screen()
     banner()
 
-    print(f"{BOLD}{WHITE}ABOUT SIGNAL LAB{RESET}\n")
+    print(
+        f"{BOLD}{WHITE}"
+        "ABOUT SIGNAL LAB"
+        f"{RESET}\n"
+    )
 
     print(
-        "SignalLab is a lightweight toolkit for "
-        "domain, network and mail diagnostics."
+        "SignalLab is a lightweight "
+        "network, domain and mail "
+        "intelligence toolkit."
     )
 
     print()
-    print("Features:")
-    print("  • Domain registration lookup")
-    print("  • Team mail configuration")
-    print("  • DNS / hostname lookup")
-    print("  • Network information")
-    print("  • HTTP/API testing")
-    print("  • TCP connectivity testing")
-    print("  • Local activity logging")
+    print(
+        "Features:"
+    )
+
+    print(
+        "  • Domain registration lookup"
+    )
+
+    print(
+        "  • Temporary email mailbox"
+    )
+
+    print(
+        "  • Inbox refresh and reader"
+    )
+
+    print(
+        "  • DNS lookup"
+    )
+
+    print(
+        "  • Network information"
+    )
+
+    print(
+        "  • HTTP/API testing"
+    )
+
+    print(
+        "  • TCP connectivity testing"
+    )
+
+    print(
+        "  • Local logging"
+    )
 
     print()
-    print(f"Version : {VERSION}")
-    print("Author  : Arun Adhikari")
-    print("License : MIT")
+    print(
+        f"Version : {VERSION}"
+    )
+
+    print(
+        "Author  : Arun Adhikari"
+    )
+
+    print(
+        "License : MIT"
+    )
+
+    print()
+    print(
+        "Temporary Mail API:"
+    )
+
+    print(
+        "https://mail.tm"
+    )
 
     pause()
 
@@ -790,7 +1892,11 @@ def main_menu():
         clear_screen()
         banner()
 
-        print(f"{BOLD}{WHITE}MAIN MENU{RESET}\n")
+        print(
+            f"{BOLD}{WHITE}"
+            "MAIN MENU"
+            f"{RESET}\n"
+        )
 
         print(
             f"{CYAN}[1]{RESET} "
@@ -799,7 +1905,7 @@ def main_menu():
 
         print(
             f"{CYAN}[2]{RESET} "
-            "Team Mail"
+            "Team Mail / Temp Mail"
         )
 
         print(
@@ -844,27 +1950,35 @@ def main_menu():
         ).strip()
 
         if choice == "1":
+
             domain_registration_lookup()
 
         elif choice == "2":
+
             team_mail()
 
         elif choice == "3":
+
             dns_lookup()
 
         elif choice == "4":
+
             network_info()
 
         elif choice == "5":
+
             api_test()
 
         elif choice == "6":
+
             connectivity_test()
 
         elif choice == "7":
+
             show_logs()
 
         elif choice == "8":
+
             about()
 
         elif choice == "0":
@@ -881,7 +1995,10 @@ def main_menu():
 
         else:
 
-            error("Invalid option.")
+            error(
+                "Invalid option."
+            )
+
             time.sleep(1)
 
 
@@ -892,6 +2009,7 @@ def main_menu():
 if __name__ == "__main__":
 
     try:
+
         main_menu()
 
     except KeyboardInterrupt:
