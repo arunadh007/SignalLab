@@ -12,14 +12,15 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 APP_NAME = "SignalLab"
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 
 LOG_FILE = "signallab.log"
 MAIL_SESSION_FILE = "tempmail_session.json"
+
 MAIL_API = "https://api.mail.tm"
 
 RESET = "\033[0m"
@@ -94,6 +95,7 @@ def normalize_domain(domain):
 
     domain = domain.split("/")[0]
     domain = domain.split(":")[0]
+
     return domain.rstrip(".")
 
 
@@ -103,16 +105,18 @@ def valid_domain(domain):
         r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
         r"[a-z]{2,63}$"
     )
+
     return bool(re.match(pattern, domain, re.I))
 
 
 # ============================================================
-# HTTP / API
+# HTTP REQUEST
 # ============================================================
 
 def api_request(url, method="GET", data=None, headers=None, timeout=15):
+
     request_headers = {
-        "User-Agent": "SignalLab/3.0"
+        "User-Agent": "SignalLab/3.1"
     }
 
     if headers:
@@ -147,10 +151,12 @@ def api_request(url, method="GET", data=None, headers=None, timeout=15):
 
             try:
                 return response.status, json.loads(raw)
+
             except json.JSONDecodeError:
                 return response.status, raw
 
     except urllib.error.HTTPError as exc:
+
         raw = exc.read().decode(
             "utf-8",
             errors="replace"
@@ -158,6 +164,7 @@ def api_request(url, method="GET", data=None, headers=None, timeout=15):
 
         try:
             data = json.loads(raw)
+
         except Exception:
             data = raw
 
@@ -171,23 +178,31 @@ def api_request(url, method="GET", data=None, headers=None, timeout=15):
 # ============================================================
 
 def save_mail_session(session):
+
     try:
         with open(
             MAIL_SESSION_FILE,
             "w",
             encoding="utf-8"
         ) as file:
+
             json.dump(
                 session,
                 file,
                 indent=2
             )
+
     except OSError as exc:
-        error(f"Unable to save mail session: {exc}")
+        error(
+            f"Unable to save mail session: {exc}"
+        )
 
 
 def load_mail_session():
-    if not os.path.exists(MAIL_SESSION_FILE):
+
+    if not os.path.exists(
+        MAIL_SESSION_FILE
+    ):
         return None
 
     try:
@@ -196,21 +211,34 @@ def load_mail_session():
             "r",
             encoding="utf-8"
         ) as file:
+
             return json.load(file)
+
     except Exception:
         return None
 
 
 def delete_mail_session():
+
     try:
-        if os.path.exists(MAIL_SESSION_FILE):
-            os.remove(MAIL_SESSION_FILE)
+
+        if os.path.exists(
+            MAIL_SESSION_FILE
+        ):
+            os.remove(
+                MAIL_SESSION_FILE
+            )
+
     except OSError:
         pass
 
 
 def random_username():
-    chars = string.ascii_lowercase + string.digits
+
+    chars = (
+        string.ascii_lowercase
+        + string.digits
+    )
 
     return (
         "".join(
@@ -222,6 +250,7 @@ def random_username():
 
 
 def random_password():
+
     chars = (
         string.ascii_letters
         + string.digits
@@ -235,6 +264,7 @@ def random_password():
 
 
 def get_temp_domains():
+
     _, data = api_request(
         f"{MAIL_API}/domains"
     )
@@ -245,18 +275,25 @@ def get_temp_domains():
         "hydra:member",
         []
     ):
-        domain = item.get("domain")
+
+        domain = item.get(
+            "domain"
+        )
 
         if domain and item.get(
             "isActive",
             True
         ):
-            domains.append(domain)
+
+            domains.append(
+                domain
+            )
 
     return domains
 
 
 def create_disposable_mail():
+
     print()
 
     info(
@@ -264,15 +301,19 @@ def create_disposable_mail():
     )
 
     try:
+
         domains = get_temp_domains()
 
         if not domains:
+
             error(
                 "No temporary mail domains are available."
             )
+
             return
 
         domain = domains[0]
+
         username = random_username()
         password = random_password()
 
@@ -291,10 +332,15 @@ def create_disposable_mail():
             }
         )
 
-        if status not in (200, 201):
+        if status not in (
+            200,
+            201
+        ):
+
             error(
                 "Unable to create mailbox."
             )
+
             return
 
         _, token_data = api_request(
@@ -306,12 +352,16 @@ def create_disposable_mail():
             }
         )
 
-        token = token_data.get("token")
+        token = token_data.get(
+            "token"
+        )
 
         if not token:
+
             error(
                 "Mailbox created but authentication token was not received."
             )
+
             return
 
         session = {
@@ -322,7 +372,9 @@ def create_disposable_mail():
             "created_at": datetime.now().isoformat()
         }
 
-        save_mail_session(session)
+        save_mail_session(
+            session
+        )
 
         print()
 
@@ -347,18 +399,22 @@ def create_disposable_mail():
         )
 
     except Exception as exc:
+
         error(
             f"Disposable Inbox error: {exc}"
         )
 
 
 def show_current_mail():
+
     session = load_mail_session()
 
     if not session:
+
         print(
             f"{YELLOW}No disposable mailbox is active.{RESET}"
         )
+
         return
 
     print(
@@ -383,16 +439,18 @@ def show_current_mail():
 
 
 def get_mail_messages():
+
     session = load_mail_session()
 
     if not session:
+
         raise RuntimeError(
             "No active disposable mailbox."
         )
 
     headers = {
         "Authorization":
-            f"Bearer {session['token']}"
+        f"Bearer {session['token']}"
     }
 
     _, data = api_request(
@@ -407,6 +465,7 @@ def get_mail_messages():
 
 
 def refresh_inbox():
+
     clear_screen()
     banner()
 
@@ -419,13 +478,17 @@ def refresh_inbox():
     session = load_mail_session()
 
     if not session:
+
         info(
             "No disposable mailbox exists."
         )
+
         print(
             "\nUse option 1 to generate one."
         )
+
         pause()
+
         return
 
     print(
@@ -434,13 +497,17 @@ def refresh_inbox():
     )
 
     try:
+
         messages = get_mail_messages()
 
         if not messages:
+
             info(
                 "Inbox is empty."
             )
+
             pause()
+
             return
 
         print(
@@ -455,6 +522,7 @@ def refresh_inbox():
             messages,
             1
         ):
+
             sender = (
                 message
                 .get("from", {})
@@ -488,6 +556,7 @@ def refresh_inbox():
         )
 
     except Exception as exc:
+
         error(
             f"Unable to fetch inbox: {exc}"
         )
@@ -496,6 +565,7 @@ def refresh_inbox():
 
 
 def read_message():
+
     clear_screen()
     banner()
 
@@ -508,20 +578,27 @@ def read_message():
     session = load_mail_session()
 
     if not session:
+
         error(
             "No active disposable mailbox."
         )
+
         pause()
+
         return
 
     try:
+
         messages = get_mail_messages()
 
         if not messages:
+
             info(
                 "Inbox is empty."
             )
+
             pause()
+
             return
 
         print(
@@ -532,6 +609,7 @@ def read_message():
             messages,
             1
         ):
+
             print(
                 f"[{index}] "
                 f"{message.get('subject', '(No subject)')}"
@@ -544,26 +622,34 @@ def read_message():
         ).strip()
 
         if not choice.isdigit():
+
             error(
                 "Invalid message number."
             )
+
             pause()
+
             return
 
         index = int(choice) - 1
 
         if index < 0 or index >= len(messages):
+
             error(
                 "Message does not exist."
             )
+
             pause()
+
             return
 
-        message_id = messages[index].get("id")
+        message_id = messages[index].get(
+            "id"
+        )
 
         headers = {
             "Authorization":
-                f"Bearer {session['token']}"
+            f"Bearer {session['token']}"
         }
 
         _, message = api_request(
@@ -629,11 +715,11 @@ def read_message():
         )
 
         write_log(
-            f"Disposable Inbox message opened: "
-            f"{subject}"
+            f"Disposable Inbox message opened: {subject}"
         )
 
     except Exception as exc:
+
         error(
             f"Unable to read message: {exc}"
         )
@@ -642,6 +728,7 @@ def read_message():
 
 
 def delete_disposable_mailbox():
+
     clear_screen()
     banner()
 
@@ -654,10 +741,13 @@ def delete_disposable_mailbox():
     session = load_mail_session()
 
     if not session:
+
         info(
             "No active mailbox."
         )
+
         pause()
+
         return
 
     address = session.get(
@@ -669,16 +759,20 @@ def delete_disposable_mailbox():
     ).strip().lower()
 
     if confirm != "yes":
+
         info(
             "Mailbox deletion cancelled."
         )
+
         pause()
+
         return
 
     try:
+
         headers = {
             "Authorization":
-                f"Bearer {session['token']}"
+            f"Bearer {session['token']}"
         }
 
         api_request(
@@ -698,6 +792,7 @@ def delete_disposable_mailbox():
         )
 
     except Exception as exc:
+
         error(
             f"Unable to delete mailbox: {exc}"
         )
@@ -706,7 +801,9 @@ def delete_disposable_mailbox():
 
 
 def disposable_inbox():
+
     while True:
+
         clear_screen()
         banner()
 
@@ -757,40 +854,52 @@ def disposable_inbox():
         ).strip()
 
         if choice == "1":
+
             create_disposable_mail()
             pause()
 
         elif choice == "2":
+
             refresh_inbox()
 
         elif choice == "3":
+
             read_message()
 
         elif choice == "4":
+
             delete_disposable_mailbox()
 
         elif choice == "5":
+
             create_disposable_mail()
             pause()
 
         elif choice == "0":
+
             break
 
         else:
+
             error(
                 "Invalid option."
             )
+
             time.sleep(1)
 
 
 # ============================================================
-# DOMAIN REGISTRATION / RDAP
+# DOMAIN INVESTIGATOR
 # ============================================================
 
 def get_rdap_server(domain):
-    tld = domain.split(".")[-1].lower()
+
+    tld = domain.split(
+        "."
+    )[-1].lower()
 
     try:
+
         _, data = api_request(
             "https://data.iana.org/rdap/dns.json"
         )
@@ -799,6 +908,7 @@ def get_rdap_server(domain):
             "services",
             []
         ):
+
             if len(service) < 2:
                 continue
 
@@ -809,6 +919,7 @@ def get_rdap_server(domain):
                 str(x).lower()
                 for x in tlds
             ]:
+
                 if servers:
                     return servers[0].rstrip("/")
 
@@ -819,12 +930,17 @@ def get_rdap_server(domain):
 
 
 def format_rdap_date(value):
+
     if not value:
         return "Not available"
 
     try:
+
         parsed = datetime.fromisoformat(
-            value.replace("Z", "+00:00")
+            value.replace(
+                "Z",
+                "+00:00"
+            )
         )
 
         return parsed.strftime(
@@ -832,14 +948,18 @@ def format_rdap_date(value):
         )
 
     except Exception:
+
         return value[:10]
 
 
 def extract_event(events, event_name):
+
     for event in events or []:
+
         if event.get(
             "eventAction"
         ) == event_name:
+
             return format_rdap_date(
                 event.get("eventDate")
             )
@@ -848,7 +968,9 @@ def extract_event(events, event_name):
 
 
 def extract_registrar(entities):
+
     for entity in entities or []:
+
         if "registrar" not in entity.get(
             "roles",
             []
@@ -860,24 +982,31 @@ def extract_registrar(entities):
             []
         )
 
-        if isinstance(vcard, list) and len(vcard) > 1:
+        if isinstance(
+            vcard,
+            list
+        ) and len(vcard) > 1:
+
             for item in vcard[1]:
+
                 if (
                     len(item) >= 4
                     and item[0] == "fn"
                 ):
+
                     return item[3]
 
     return "Not available"
 
 
-def domain_registration_lookup():
+def domain_investigator():
+
     clear_screen()
     banner()
 
     print(
         f"{BOLD}{WHITE}"
-        "DOMAIN REGISTRATION LOOKUP"
+        "DOMAIN INVESTIGATOR"
         f"{RESET}\n"
     )
 
@@ -889,11 +1018,16 @@ def domain_registration_lookup():
         domain
     )
 
-    if not valid_domain(domain):
+    if not valid_domain(
+        domain
+    ):
+
         error(
             "Please enter a valid domain."
         )
+
         pause()
+
         return
 
     info(
@@ -902,15 +1036,19 @@ def domain_registration_lookup():
     )
 
     try:
+
         rdap_server = get_rdap_server(
             domain
         )
 
         if not rdap_server:
+
             error(
                 "No RDAP server found."
             )
+
             pause()
+
             return
 
         url = (
@@ -918,7 +1056,9 @@ def domain_registration_lookup():
             f"{urllib.parse.quote(domain)}"
         )
 
-        _, data = api_request(url)
+        _, data = api_request(
+            url
+        )
 
         registration = extract_event(
             data.get("events"),
@@ -950,11 +1090,13 @@ def domain_registration_lookup():
             "nameservers",
             []
         ):
+
             name = ns.get(
                 "ldhName"
             )
 
             if name:
+
                 nameservers.append(
                     name.rstrip(".")
                 )
@@ -1002,6 +1144,7 @@ def domain_registration_lookup():
         )
 
         for status in statuses:
+
             print(
                 f"  • {status}"
             )
@@ -1011,22 +1154,27 @@ def domain_registration_lookup():
         )
 
         if nameservers:
+
             for server in nameservers:
+
                 print(
                     f"  • {server}"
                 )
+
         else:
+
             print(
                 "  Not available"
             )
 
         write_log(
-            f"RDAP lookup: {domain}"
+            f"Domain Investigator: {domain}"
         )
 
     except urllib.error.HTTPError as exc:
 
         if exc.code == 404:
+
             print(
                 f"\nDomain : {domain}"
             )
@@ -1036,11 +1184,13 @@ def domain_registration_lookup():
             )
 
         else:
+
             error(
                 f"RDAP HTTP error: {exc.code}"
             )
 
     except Exception as exc:
+
         error(
             f"RDAP lookup failed: {exc}"
         )
@@ -1049,38 +1199,11 @@ def domain_registration_lookup():
 
 
 # ============================================================
-# DNS
+# DNS / HOST LOOKUP
 # ============================================================
 
-def doh_query(name, record_type):
-    encoded = urllib.parse.quote(name)
-
-    url = (
-        "https://cloudflare-dns.com/dns-query"
-        f"?name={encoded}&type={record_type}"
-    )
-
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/dns-json",
-            "User-Agent": "SignalLab/3.0"
-        }
-    )
-
-    with urllib.request.urlopen(
-        request,
-        timeout=10
-    ) as response:
-        return json.loads(
-            response.read().decode(
-                "utf-8",
-                errors="replace"
-            )
-        )
-
-
 def dns_lookup():
+
     clear_screen()
     banner()
 
@@ -1099,13 +1222,17 @@ def dns_lookup():
     )
 
     if not hostname:
+
         error(
             "Hostname cannot be empty."
         )
+
         pause()
+
         return
 
     try:
+
         start = time.perf_counter()
 
         addresses = socket.getaddrinfo(
@@ -1115,7 +1242,8 @@ def dns_lookup():
         )
 
         elapsed = (
-            time.perf_counter() - start
+            time.perf_counter()
+            - start
         ) * 1000
 
         ips = sorted(
@@ -1139,6 +1267,7 @@ def dns_lookup():
             ips,
             1
         ):
+
             print(
                 f"  IPv4 #{index}: {ip}"
             )
@@ -1152,6 +1281,7 @@ def dns_lookup():
         )
 
     except socket.gaierror:
+
         error(
             "Unable to resolve hostname."
         )
@@ -1164,6 +1294,7 @@ def dns_lookup():
 # ============================================================
 
 def network_info():
+
     clear_screen()
     banner()
 
@@ -1176,10 +1307,13 @@ def network_info():
     hostname = socket.gethostname()
 
     try:
+
         local_ip = socket.gethostbyname(
             hostname
         )
+
     except socket.gaierror:
+
         local_ip = "Unavailable"
 
     print(
@@ -1215,11 +1349,14 @@ def network_info():
     )
 
     try:
+
         public_ip = urllib.request.urlopen(
             "https://api.ipify.org",
             timeout=5
         ).read().decode()
+
     except Exception:
+
         public_ip = "Unavailable"
 
     print(
@@ -1227,10 +1364,13 @@ def network_info():
     )
 
     try:
+
         print(
             f"FQDN          : {socket.getfqdn()}"
         )
+
     except Exception:
+
         print(
             "FQDN          : Unavailable"
         )
@@ -1243,108 +1383,11 @@ def network_info():
 
 
 # ============================================================
-# HTTP / API TEST
-# ============================================================
-
-def api_test():
-    clear_screen()
-    banner()
-
-    print(
-        f"{BOLD}{WHITE}"
-        "HTTP / API RESPONSE TESTER"
-        f"{RESET}\n"
-    )
-
-    url = input(
-        "Enter URL: "
-    ).strip()
-
-    if not url.startswith(
-        ("http://", "https://")
-    ):
-        error(
-            "URL must start with http:// or https://"
-        )
-        pause()
-        return
-
-    info(
-        "Testing endpoint..."
-    )
-
-    start = time.perf_counter()
-
-    try:
-        request = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent":
-                    "SignalLab/3.0"
-            }
-        )
-
-        with urllib.request.urlopen(
-            request,
-            timeout=10
-        ) as response:
-
-            elapsed = (
-                time.perf_counter() - start
-            ) * 1000
-
-            print()
-
-            success(
-                "Request completed."
-            )
-
-            print(
-                f"Status        : {response.status}"
-            )
-
-            print(
-                f"Response time : {elapsed:.2f} ms"
-            )
-
-            print(
-                f"Content-Type  : "
-                f"{response.headers.get('Content-Type', 'Unknown')}"
-            )
-
-            print(
-                f"Server        : "
-                f"{response.headers.get('Server', 'Not disclosed')}"
-            )
-
-            write_log(
-                f"API test: {url} | "
-                f"status={response.status}"
-            )
-
-    except urllib.error.HTTPError as exc:
-        error(
-            f"HTTP error: {exc.code}"
-        )
-
-    except urllib.error.URLError as exc:
-        error(
-            f"Connection failed: {exc.reason}"
-        )
-
-    except Exception as exc:
-        error(
-            f"Unexpected error: {exc}"
-        )
-
-    pause()
-
-
-# ============================================================
-# CONNECTIVITY
+# CONNECTIVITY TEST
 # ============================================================
 
 def connectivity_test():
+
     clear_screen()
     banner()
 
@@ -1363,14 +1406,20 @@ def connectivity_test():
     )
 
     try:
+
         start = time.perf_counter()
 
         with socket.create_connection(
-            (host, 443),
+            (
+                host,
+                443
+            ),
             timeout=5
         ):
+
             elapsed = (
-                time.perf_counter() - start
+                time.perf_counter()
+                - start
             ) * 1000
 
         success(
@@ -1394,6 +1443,7 @@ def connectivity_test():
         )
 
     except OSError as exc:
+
         error(
             f"Connection failed: {exc}"
         )
@@ -1402,10 +1452,297 @@ def connectivity_test():
 
 
 # ============================================================
-# LOGS
+# VERIFICATION LAB
+# ============================================================
+
+def generate_otp():
+
+    return (
+        f"{random.randint(0, 999999):06d}"
+    )
+
+
+def verification_lab():
+
+    current_otp = None
+    otp_created_at = None
+    expiry_seconds = 120
+
+    while True:
+
+        clear_screen()
+        banner()
+
+        print(
+            f"{BOLD}{WHITE}"
+            "VERIFICATION LAB"
+            f"{RESET}\n"
+        )
+
+        print(
+            "Local OTP generation and "
+            "verification testing."
+        )
+
+        print(
+            "No third-party OTP interception."
+        )
+
+        print()
+
+        print(
+            f"{CYAN}[1]{RESET} Generate Test OTP"
+        )
+
+        print(
+            f"{CYAN}[2]{RESET} Verify OTP"
+        )
+
+        print(
+            f"{CYAN}[3]{RESET} Generate New OTP"
+        )
+
+        print(
+            f"{CYAN}[4]{RESET} View OTP Session"
+        )
+
+        print(
+            f"{CYAN}[0]{RESET} Back"
+        )
+
+        print()
+
+        choice = input(
+            f"{BOLD}Verification Lab > {RESET}"
+        ).strip()
+
+        # ----------------------------------------------------
+        # Generate OTP
+        # ----------------------------------------------------
+
+        if choice in (
+            "1",
+            "3"
+        ):
+
+            current_otp = generate_otp()
+
+            otp_created_at = datetime.now()
+
+            expires_at = (
+                otp_created_at
+                + timedelta(
+                    seconds=expiry_seconds
+                )
+            )
+
+            clear_screen()
+            banner()
+
+            print(
+                f"{BOLD}{WHITE}"
+                "TEST OTP GENERATED"
+                f"{RESET}\n"
+            )
+
+            print(
+                f"OTP       : "
+                f"{GREEN}{current_otp}{RESET}"
+            )
+
+            print(
+                f"Created   : "
+                f"{otp_created_at.strftime('%H:%M:%S')}"
+            )
+
+            print(
+                f"Expires   : "
+                f"{expires_at.strftime('%H:%M:%S')}"
+            )
+
+            print(
+                f"Validity  : "
+                f"{expiry_seconds} seconds"
+            )
+
+            print()
+
+            success(
+                "Test OTP generated locally."
+            )
+
+            write_log(
+                "Verification Lab generated a local test OTP."
+            )
+
+            pause()
+
+        # ----------------------------------------------------
+        # Verify OTP
+        # ----------------------------------------------------
+
+        elif choice == "2":
+
+            clear_screen()
+            banner()
+
+            print(
+                f"{BOLD}{WHITE}"
+                "VERIFY TEST OTP"
+                f"{RESET}\n"
+            )
+
+            if not current_otp:
+
+                error(
+                    "No OTP has been generated."
+                )
+
+                pause()
+
+                continue
+
+            elapsed = (
+                datetime.now()
+                - otp_created_at
+            ).total_seconds()
+
+            if elapsed > expiry_seconds:
+
+                error(
+                    "OTP has expired."
+                )
+
+                current_otp = None
+                otp_created_at = None
+
+                pause()
+
+                continue
+
+            remaining = int(
+                expiry_seconds
+                - elapsed
+            )
+
+            entered = input(
+                "Enter OTP: "
+            ).strip()
+
+            if entered == current_otp:
+
+                success(
+                    "OTP verification successful."
+                )
+
+                print(
+                    f"Remaining validity: "
+                    f"{remaining} seconds"
+                )
+
+                write_log(
+                    "Verification Lab OTP verification successful."
+                )
+
+                current_otp = None
+                otp_created_at = None
+
+            else:
+
+                error(
+                    "Invalid OTP."
+                )
+
+                print(
+                    f"Remaining validity: "
+                    f"{remaining} seconds"
+                )
+
+                write_log(
+                    "Verification Lab rejected an invalid OTP."
+                )
+
+            pause()
+
+        # ----------------------------------------------------
+        # View Session
+        # ----------------------------------------------------
+
+        elif choice == "4":
+
+            clear_screen()
+            banner()
+
+            print(
+                f"{BOLD}{WHITE}"
+                "OTP SESSION"
+                f"{RESET}\n"
+            )
+
+            if not current_otp:
+
+                print(
+                    "Status : No active OTP"
+                )
+
+            else:
+
+                elapsed = (
+                    datetime.now()
+                    - otp_created_at
+                ).total_seconds()
+
+                if elapsed > expiry_seconds:
+
+                    print(
+                        "Status : Expired"
+                    )
+
+                    current_otp = None
+                    otp_created_at = None
+
+                else:
+
+                    remaining = int(
+                        expiry_seconds
+                        - elapsed
+                    )
+
+                    print(
+                        "Status : Active"
+                    )
+
+                    print(
+                        f"Created : "
+                        f"{otp_created_at.strftime('%H:%M:%S')}"
+                    )
+
+                    print(
+                        f"Expires : "
+                        f"{remaining} seconds remaining"
+                    )
+
+            pause()
+
+        elif choice == "0":
+
+            break
+
+        else:
+
+            error(
+                "Invalid option."
+            )
+
+            time.sleep(1)
+
+
+# ============================================================
+# LOG VIEWER
 # ============================================================
 
 def show_logs():
+
     clear_screen()
     banner()
 
@@ -1415,19 +1752,26 @@ def show_logs():
         f"{RESET}\n"
     )
 
-    if not os.path.exists(LOG_FILE):
+    if not os.path.exists(
+        LOG_FILE
+    ):
+
         info(
             "No logs available."
         )
+
         pause()
+
         return
 
     try:
+
         with open(
             LOG_FILE,
             "r",
             encoding="utf-8"
         ) as file:
+
             content = file.read()
 
         print(
@@ -1437,6 +1781,7 @@ def show_logs():
         )
 
     except OSError as exc:
+
         error(
             f"Unable to read logs: {exc}"
         )
@@ -1449,6 +1794,7 @@ def show_logs():
 # ============================================================
 
 def about():
+
     clear_screen()
     banner()
 
@@ -1467,11 +1813,11 @@ def about():
     print()
 
     print(
-        "Features:"
+        "Modules:"
     )
 
     print(
-        "  • Domain registration lookup"
+        "  • Domain Investigator"
     )
 
     print(
@@ -1479,31 +1825,23 @@ def about():
     )
 
     print(
-        "  • Disposable email generation"
+        "  • DNS / Host Lookup"
     )
 
     print(
-        "  • Inbox refresh and message reader"
+        "  • Network Information"
     )
 
     print(
-        "  • DNS lookup"
+        "  • Verification Lab"
     )
 
     print(
-        "  • Network information"
+        "  • Connectivity Test"
     )
 
     print(
-        "  • HTTP/API testing"
-    )
-
-    print(
-        "  • TCP connectivity testing"
-    )
-
-    print(
-        "  • Local activity logging"
+        "  • Local Activity Logs"
     )
 
     print()
@@ -1523,11 +1861,8 @@ def about():
     print()
 
     print(
-        "Disposable mail service:"
-    )
-
-    print(
-        "https://mail.tm"
+        "Verification Lab generates "
+        "local test OTPs for software testing."
     )
 
     pause()
@@ -1538,6 +1873,7 @@ def about():
 # ============================================================
 
 def main_menu():
+
     while True:
 
         clear_screen()
@@ -1551,7 +1887,7 @@ def main_menu():
 
         print(
             f"{CYAN}[1]{RESET} "
-            "Domain Registration Lookup"
+            "Domain Investigator"
         )
 
         print(
@@ -1571,7 +1907,7 @@ def main_menu():
 
         print(
             f"{CYAN}[5]{RESET} "
-            "HTTP / API Tester"
+            "Verification Lab"
         )
 
         print(
@@ -1601,27 +1937,35 @@ def main_menu():
         ).strip()
 
         if choice == "1":
-            domain_registration_lookup()
+
+            domain_investigator()
 
         elif choice == "2":
+
             disposable_inbox()
 
         elif choice == "3":
+
             dns_lookup()
 
         elif choice == "4":
+
             network_info()
 
         elif choice == "5":
-            api_test()
+
+            verification_lab()
 
         elif choice == "6":
+
             connectivity_test()
 
         elif choice == "7":
+
             show_logs()
 
         elif choice == "8":
+
             about()
 
         elif choice == "0":
@@ -1652,6 +1996,7 @@ def main_menu():
 if __name__ == "__main__":
 
     try:
+
         main_menu()
 
     except KeyboardInterrupt:
